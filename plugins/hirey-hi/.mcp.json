@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hi": {
+      "type": "http",
+      "url": "https://hi.hirey.ai/mcp"
+    }
+  }
+}

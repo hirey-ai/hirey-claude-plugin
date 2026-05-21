@@ -1,0 +1,20 @@
+{
+  "name": "hirey",
+  "description": "Hirey's official Claude Code marketplace — plugins for the Hi people-to-people platform.",
+  "owner": {
+    "name": "Hirey",
+    "email": "security@hirey.com"
+  },
+  "plugins": [
+    {
+      "name": "hirey-hi",
+      "displayName": "Hirey Hi",
+      "source": "./plugins/hirey-hi",
+      "description": "Find people for hiring, jobs, housing, dating, friendship, founders, investors, lawyers, and any other human-lead work — backed by the Hi platform via a remote MCP connection.",
+      "homepage": "https://hi.hirey.ai",
+      "license": "UNLICENSED",
+      "category": "Productivity",
+      "keywords": ["hirey", "hi", "recruiting", "hiring", "matching", "people", "mcp"]
+    }
+  ]
+}

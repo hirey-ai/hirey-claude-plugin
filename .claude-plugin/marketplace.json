@@ -8,7 +8,6 @@
   "plugins": [
     {
       "name": "hirey-hi",
-      "displayName": "Hirey Hi",
       "source": "./plugins/hirey-hi",
       "description": "Find people for hiring, jobs, housing, dating, friendship, founders, investors, lawyers, and any other human-lead work — backed by the Hi platform via a remote MCP connection.",
       "homepage": "https://hi.hirey.ai",

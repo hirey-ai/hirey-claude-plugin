@@ -1,6 +1,5 @@
 {
   "name": "hirey-hi",
-  "displayName": "Hirey Hi",
   "version": "0.1.0",
   "description": "Hirey Hi for Claude Code — find people for jobs, hiring, housing, friendship, dating, founders, investors, lawyers, and any other human-lead goal. Zero local install: ships skills + a remote MCP connection to Hi cloud, authenticated via OAuth.",
   "author": {

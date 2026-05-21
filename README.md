@@ -92,4 +92,4 @@ All three are sibling adapters over the same Hi public capability catalog. Tool 
 
 ## License
 
-UNLICENSED (proprietary). Free to install and use against Hi's hosted service; do not fork or redistribute the plugin manifest under your own marketplace name.
+MIT — see [LICENSE](./LICENSE). The MIT license covers the plugin shell (manifest, skill markdown, `.mcp.json` connector, docs). The remote Hi MCP service this plugin connects to (`https://hi.hirey.ai/mcp`) is operated by Hirey under separate Terms of Service.

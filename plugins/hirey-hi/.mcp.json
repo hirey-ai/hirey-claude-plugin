@@ -2,7 +2,11 @@
   "mcpServers": {
     "hi": {
       "type": "http",
-      "url": "https://hi.hirey.ai/mcp"
+      "url": "https://hi.hirey.ai/mcp",
+      "oauth": {
+        "clientId": "oac_ETbApJKcMETA7spK-ZNK05j8",
+        "callbackPort": 7717
+      }
     }
   }
 }

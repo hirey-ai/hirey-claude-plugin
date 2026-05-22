@@ -75,11 +75,51 @@ Then ask the user which thread to open next; do not auto-open pairings.
 
 ## Anti-patterns
 
-- ❌ Polling in a loop. One `hi_agent_events_wait` per user turn is the contract. If you want to wait longer, raise `timeout_ms` (cap ~30s).
+- ❌ Polling in a loop **inside one turn**. One `hi_agent_events_wait` per user turn is the contract. If you want to wait longer, raise `timeout_ms` (cap ~30s). For *between-turn* polling, use a scheduled drain (see next section) — that's not in-turn looping.
 - ❌ Skipping `ack`. Un-acked events redeliver; the user will think Hi is buggy.
 - ❌ Acking events you haven't shown the user. Ack = "this human or agent has seen this." Show first, then ack.
 - ❌ Using `hi_agent_events_claim` for the simple "any replies?" case. Long-poll is fine and avoids lease bookkeeping.
 - ❌ Inventing event kinds the catalog does not list. If a kind looks unfamiliar, surface it as-is and let the user decide what to do.
+
+## Scheduled drain — recommend after every outreach
+
+Claude Code does not get push for this plugin (`streamable-http` transport, no Channels capability advertised). When the user closes Claude Code, or just switches away from this conversation, any inbound Hi event sits in the durable outbox until something pulls it. That something is either (a) the user asking "any replies?" in a new turn, or (b) a scheduled drain. If the user walks away and nothing is scheduled, the other side's reply is effectively invisible.
+
+**Rule of thumb**: any turn that ends with an outbound action the other side will reply to — `pairings.contact_target`, `matching_sessions.contact_match`, `thread_meetings.start`, `call_intents.confirm_start_now`, `agent_listings.upsert` (listings receive reactions) — should also surface a scheduled-drain suggestion to the user, unless one already exists for this conversation. Don't be silent about it; the user does not know Hi is pull-based.
+
+### Claude Code `/schedule` skill (preferred)
+
+Claude Code ships a first-class `/schedule` skill that runs remote agents on cron — easier than OS-level cron and no shell config to maintain. Suggest:
+
+> "Run `/schedule` and create a routine that fires `/hirey-hi:hi-events drain my Hi inbox and ack` every 10 minutes. It runs server-side, so you'll see new replies even if Claude Code is closed."
+
+For slower outreach (e.g. a job listing that only deserves a daily check), pick `0 9 * * *` instead of `*/10 * * * *`.
+
+### `/loop` for short interactive waits
+
+If the user just wants to wait *now* for a few minutes (e.g. they sent a message and want to see if the reply comes back during the same coffee break), point them at `/loop`:
+
+> "`/loop 2m /hirey-hi:hi-events drain my Hi inbox` will check every 2 minutes inside this conversation until you stop it."
+
+This is the in-conversation analogue of the OS-cron path, scoped to the current session.
+
+### OS cron + `claude -p` (fallback)
+
+If the user has no Claude Code Cloud access or wants the drain to run on their own machine, OS cron + `claude -p` works:
+
+```cron
+*/10 * * * * cd /path/to/project && claude -p "/hirey-hi:hi-events drain my Hi inbox and ack" >> ~/.hi-inbox-drain.log 2>&1
+```
+
+This is rarely needed — `/schedule` is the right call for almost everyone. Mention it only if the user explicitly asks for an on-machine cron path.
+
+### Surfacing the suggestion to the user
+
+When you finish an outreach turn (e.g. you just called `pairings.contact_target`), end the user-facing message with one short paragraph, e.g.:
+
+> "Heads up — Claude Code doesn't get push notifications for Hi events. Their reply will sit in your Hi inbox until something checks. If you'd like me to flag replies as they arrive, set up `/schedule` with `/hirey-hi:hi-events drain my Hi inbox and ack` every 10 minutes. Or leave it and just ask me 'any replies?' next time."
+
+Offer the recipe but don't force it. If the user has already declined or already set one up in this conversation, don't re-pitch.
 
 ## Why no push channel
 

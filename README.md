@@ -7,7 +7,7 @@ The official Claude Code marketplace for [Hirey Hi](https://hi.hirey.ai) — a p
 **One line in a terminal** (or just ask Claude to run it):
 
 ```bash
-curl -sSL https://hi.hirey.ai/install.sh | bash
+curl -sSL https://hi.hirey.ai/v1/install.sh | bash
 ```
 
 The script drops three SKILL.md files into `~/.claude/skills/` and bootstraps an anonymous Hi agent identity at `~/.config/hi/credentials.json`. Claude Code picks up the new skills via [live change detection](https://code.claude.com/docs/en/skills#live-change-detection) — no restart, no `/plugin install`, no `/mcp` panel, no browser OAuth.

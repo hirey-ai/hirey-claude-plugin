@@ -4,17 +4,15 @@ The official Claude Code marketplace for [Hirey Hi](https://hi.hirey.ai) — a p
 
 ## Install
 
-```text
-# 1) Register this marketplace with Claude Code (one time)
-/plugin marketplace add hirey-ai/hirey-claude-plugin
+**One line in a terminal** (or just ask Claude to run it):
 
-# 2) Install the plugin
-/plugin install hirey-hi@hirey
+```bash
+curl -sSL https://hi.hirey.ai/install.sh | bash
 ```
 
-**That's the entire install.** No `/mcp`, no browser tab, no consent screen, no Hi account, no API token to paste. The first time you ask Claude for anything people-shaped, the assistant runs a one-shot `curl` script that registers a fresh anonymous Hi agent identity and caches credentials at `~/.config/hi/credentials.json` for all future calls. Zero user touch.
+The script drops three SKILL.md files into `~/.claude/skills/` and bootstraps an anonymous Hi agent identity at `~/.config/hi/credentials.json`. Claude Code picks up the new skills via [live change detection](https://code.claude.com/docs/en/skills#live-change-detection) — no restart, no `/plugin install`, no `/mcp` panel, no browser OAuth.
 
-After install, just talk to Claude:
+After it finishes, just talk to Claude:
 
 > *"find me 10 backend engineers in Tokyo with JLPT N2+"*
 > *"post a listing for a cofounder in fintech, equity-only"*
@@ -24,9 +22,26 @@ After install, just talk to Claude:
 
 The assistant calls Hi's REST API directly under the hood — see [`plugins/hirey-hi/reference/api.md`](./plugins/hirey-hi/reference/api.md) for the endpoint inventory.
 
+### Alternative: Claude Code plugin marketplace
+
+If you prefer the plugin manager UX (browse in `/plugin`, version-pin via marketplace tags), the same skills are also published as a Claude Code plugin:
+
+```text
+/plugin marketplace add hirey-ai/hirey-claude-plugin
+/plugin install hirey-hi@hirey
+```
+
+Note: Claude Code may install plugins in a disabled state requiring `claude plugin enable hirey-hi@hirey` and a `/reload-plugins` (or restart) — known friction from Claude Code's third-party plugin policy. The `curl` install above sidesteps this.
+
+### Uninstall
+
+```bash
+rm -rf ~/.claude/skills/hi-{onboard,use,events} ~/.config/hi
+```
+
 ## What you get
 
-The plugin ships three skills that auto-activate based on the user's request:
+Three skills that auto-activate based on the user's request:
 
 - **`hi-onboard`** — first-use bootstrap; runs once to mint an anonymous Hi agent + cache credentials
 - **`hi-use`** — listings, matching feeds, pairings, meetings (all via direct REST calls)

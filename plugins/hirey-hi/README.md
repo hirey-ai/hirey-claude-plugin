@@ -6,17 +6,24 @@ Claude Code plugin that gives Claude direct access to the Hi people-to-people pl
 
 ## Install
 
-```text
-# 1) Register the Hirey marketplace (one-time)
-/plugin marketplace add hirey-ai/hirey-claude-plugin
+```bash
+curl -sSL https://hi.hirey.ai/install.sh | bash
+```
 
-# 2) Install the plugin
+That's it. The script drops `hi-onboard`, `hi-use`, and `hi-events` into `~/.claude/skills/`, registers an anonymous Hi agent, and caches a long-lived bearer at `~/.config/hi/credentials.json`. Claude Code [picks up new skills live](https://code.claude.com/docs/en/skills#live-change-detection) — no restart needed.
+
+Once it finishes, just talk to Claude: "find me 10 backend engineers in Tokyo", "reach out to candidates from yesterday", "schedule a Zoom with Alex". The assistant uses Hi's tools directly.
+
+### Alternative: plugin-marketplace install
+
+The same skills are also published as a Claude Code plugin:
+
+```text
+/plugin marketplace add hirey-ai/hirey-claude-plugin
 /plugin install hirey-hi@hirey
 ```
 
-**That's the entire install.** No third step. The first time you ask Claude for anything people-shaped, the `hi-onboard` skill runs and bootstraps an anonymous identity automatically.
-
-After install, just talk to Claude: "find me 10 backend engineers in Tokyo", "reach out to candidates from yesterday", "schedule a Zoom with Alex". The assistant uses Hi's tools directly.
+Use this if you want the `/plugin` manager UX. The `curl` install above is recommended because it sidesteps Claude Code's third-party plugin enable/reload friction.
 
 ## How it works under the hood
 

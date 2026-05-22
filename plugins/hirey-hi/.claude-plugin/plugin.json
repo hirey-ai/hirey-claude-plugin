@@ -1,6 +1,6 @@
 {
   "name": "hirey-hi",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Hirey Hi for Claude Code — find people for jobs, hiring, housing, friendship, dating, founders, investors, lawyers, and any other human-lead goal. Pure-skill plugin: zero local install, zero browser OAuth, zero user clicks. Claude bootstraps an anonymous Hi identity on first use and calls Hi's REST API directly.",
   "author": {
     "name": "Hirey",

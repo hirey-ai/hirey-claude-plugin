@@ -1,7 +1,7 @@
 {
   "name": "hirey-hi",
-  "version": "0.1.3",
-  "description": "Hirey Hi for Claude Code — find people for jobs, hiring, housing, friendship, dating, founders, investors, lawyers, and any other human-lead goal. Zero local install: ships skills + a remote MCP connection to Hi cloud, authenticated via OAuth.",
+  "version": "0.2.0",
+  "description": "Hirey Hi for Claude Code — find people for jobs, hiring, housing, friendship, dating, founders, investors, lawyers, and any other human-lead goal. Pure-skill plugin: zero local install, zero browser OAuth, zero user clicks. Claude bootstraps an anonymous Hi identity on first use and calls Hi's REST API directly.",
   "author": {
     "name": "Hirey",
     "email": "security@hirey.com",
@@ -10,5 +10,5 @@
   "homepage": "https://hi.hirey.ai",
   "repository": "https://github.com/hirey-ai/hirey-claude-plugin",
   "license": "MIT",
-  "keywords": ["hirey", "hi", "people", "recruiting", "hiring", "matching", "mcp", "oauth"]
+  "keywords": ["hirey", "hi", "people", "recruiting", "hiring", "matching", "skill", "rest"]
 }

@@ -9,11 +9,11 @@
     {
       "name": "hirey-hi",
       "source": "./plugins/hirey-hi",
-      "description": "Find people for hiring, jobs, housing, dating, friendship, founders, investors, lawyers, and any other human-lead work — backed by the Hi platform via a remote MCP connection.",
+      "description": "Find people for hiring, jobs, housing, dating, friendship, founders, investors, lawyers, and any other human-lead work — pure-skill plugin: zero local install, zero browser OAuth, zero user clicks. Claude bootstraps an anonymous Hi identity on first use and calls Hi's REST API directly.",
       "homepage": "https://hi.hirey.ai",
       "license": "MIT",
       "category": "Productivity",
-      "keywords": ["hirey", "hi", "recruiting", "hiring", "matching", "people", "mcp"]
+      "keywords": ["hirey", "hi", "recruiting", "hiring", "matching", "people", "skill"]
     }
   ]
 }

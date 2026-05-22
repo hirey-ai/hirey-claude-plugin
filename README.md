@@ -11,21 +11,22 @@ The official Claude Code marketplace for [Hirey Hi](https://hi.hirey.ai) — a p
 # 2) Install and enable the plugin
 /plugin install hirey-hi@hirey
 
-# 3) Apply the new MCP server in the current session
-/reload-plugins
+# 3) Authorize this Claude Code install against Hi
+/mcp
+# > arrow-key to the `plugin:hirey-hi:hi` row → press Enter → Authenticate
 ```
 
-That's it. The plugin's `.mcp.json` carries a pre-registered OAuth client + fixed loopback callback port, so on enable Claude Code goes straight to the browser OAuth flow — **no need to open `/mcp` and click "Authenticate" manually**. A browser tab opens, redirects to a local callback, and closes itself in about a second. No Hi account, no consent screen, no email/phone — Hi provisions a fresh anonymous agent identity for this Claude Code install in the background.
-
-If for any reason the browser flow does not fire automatically (older Claude Code build, blocked popup, etc.), you can always trigger it from `/mcp` → `hi` → **Authenticate** as a fallback.
+Step 3 opens a browser tab, redirects to a Claude Code loopback callback, and closes itself in about a second. No Hi account, no consent screen, no email/phone — Hi provisions a fresh anonymous agent identity for this Claude Code install in the background.
 
 Once authorized, ask Claude anything people-shaped — *"find me 10 backend engineers in Tokyo with JLPT N2+"*, *"reach out to the top three from yesterday"*, *"schedule a 30-min Zoom with Alex next Wednesday"* — and it uses Hi's tools directly.
+
+> **Why step 3 isn't automatic:** Claude Code's plugin OAuth auto-trigger has an open bug ([anthropics/claude-code#36307](https://github.com/anthropics/claude-code/issues/36307)) where browser flow doesn't fire on plugin enable, even with a pre-registered `oauth.clientId` (the Slack-pattern workaround). The plugin still ships a pre-registered client so that when you click Authenticate in `/mcp`, the flow skips DCR and stays anonymous per install — but the `/mcp` step itself is currently unavoidable.
 
 ## What you get
 
 Claude Code picks up three skills + a dynamic tool catalog the moment the plugin is enabled:
 
-- **`/hirey-hi:hi-onboard`** — first-time setup helper; only needed if the auto-OAuth flow on plugin enable didn't fire and you need to fall back to the `/mcp` Authenticate panel
+- **`/hirey-hi:hi-onboard`** — first-time setup: walks you through the `/mcp` Authenticate flow and verifies the install is connected
 - **`/hirey-hi:hi-use`** — workflows for listings, matching feeds, pairings, and meetings
 - **`/hirey-hi:hi-events`** — durable pull for inbound replies, meeting confirmations, and match updates
 
@@ -43,7 +44,7 @@ Claude Code ──(HTTPS + OAuth bearer)──▶ https://hi.hirey.ai/mcp
 ```
 
 - **Remote MCP** ([Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http)). No local Node, no daemon, no state dir on your machine.
-- **OAuth 2.1** with [PKCE](https://www.rfc-editor.org/rfc/rfc7636) + [Protected Resource Metadata (RFC 9728)](https://www.rfc-editor.org/rfc/rfc9728) + [Resource Indicators (RFC 8707)](https://www.rfc-editor.org/rfc/rfc8707). Claude Code's plugin ships a pre-registered shared `client_id` (skipping [Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591) to dodge [anthropics/claude-code#36307](https://github.com/anthropics/claude-code/issues/36307) and trigger the browser flow on enable). Hi mints a fresh anonymous subject for every `/authorize` call against this client, so every install still gets its own per-machine identity. Bearer lives in your OS keychain via Claude Code.
+- **OAuth 2.1** with [PKCE](https://www.rfc-editor.org/rfc/rfc7636) + [Protected Resource Metadata (RFC 9728)](https://www.rfc-editor.org/rfc/rfc9728) + [Resource Indicators (RFC 8707)](https://www.rfc-editor.org/rfc/rfc8707). The plugin ships a pre-registered shared `oauth.clientId` so the `/mcp` Authenticate flow skips [Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591); Hi mints a fresh anonymous subject for every `/authorize` call against this client, so every install still gets its own per-machine identity. Bearer lives in your OS keychain via Claude Code.
 - **Anonymous identity model** — same as Hi's OpenClaw and Codex plugins. No Hi user account is created or required for Claude Code to use the platform.
 
 ## Privacy & scope

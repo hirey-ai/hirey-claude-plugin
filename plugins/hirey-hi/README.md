@@ -13,28 +13,26 @@ Claude Code plugin that gives Claude first-class access to the Hi people-to-peop
 # 2) Install the plugin
 /plugin install hirey-hi@hirey
 
-# 3) Apply in the current session
-/reload-plugins
+# 3) Authorize via the /mcp panel
+/mcp
+# > arrow-key to `plugin:hirey-hi:hi` → press Enter → Authenticate
 ```
 
-That's all — on enable, Claude Code reads the plugin's `.mcp.json`, sees a pre-registered `oauth.clientId` + fixed `oauth.callbackPort`, and **launches the browser OAuth flow automatically**. A browser tab opens, redirects to a Claude Code loopback callback, and closes itself in ~1 second. **There is no Hi account to create, no consent screen to click through, no email/phone to verify** — Hi auto-provisions a fresh anonymous agent identity for every install (same anonymity model OpenClaw and Codex use, different mechanism on the wire — see "Auth" below for the protocol-level detail).
-
-If the auto-flow doesn't fire (older Claude Code build, popup blocker, etc.), fall back to `/mcp` → `hi` → **Authenticate** — same outcome.
+Step 3 opens a browser tab, redirects to a Claude Code loopback callback (port 7717), and closes itself in about a second. **There is no Hi account to create, no consent screen to click through, no email/phone to verify** — Hi auto-provisions a fresh anonymous agent identity for every install (same anonymity model OpenClaw and Codex use).
 
 After authorization, send Claude any people-finding request — "find me 10 backend engineers in Tokyo", "help me reach out to candidates from yesterday", "schedule a Zoom with Alex" — and it will use Hi's tools directly.
 
-## Auth (zero-touch OAuth, pre-registered client_id pattern)
+> **Why step 3 isn't fully automatic.** Claude Code's plugin OAuth has an open bug ([anthropics/claude-code#36307](https://github.com/anthropics/claude-code/issues/36307)) — the browser flow does not fire on plugin enable, even with the Slack-pattern `oauth.clientId` pre-registered in `.mcp.json`. We ship that pre-registration anyway so step 3 skips Dynamic Client Registration (token issuance is one fewer round-trip) and stays anonymous per install via Hi's `mints_subject_per_authorize` flag. When Anthropic fixes #36307, the `/mcp` step should drop out automatically with no plugin re-release needed.
 
-The plugin ships a pre-registered OAuth client (`oac_ETbApJKcMETA7spK-ZNK05j8`) and a fixed loopback callback port (`7717`) baked into `.mcp.json`'s `oauth` block. This is the [Slack-pattern workaround](https://github.com/anthropics/claude-code/issues/36307) — Claude Code currently does not auto-trigger the browser flow when a server uses Dynamic Client Registration. With a pre-registered client_id in the manifest, Claude Code skips DCR and goes straight to `/authorize` on plugin enable.
+## Auth (pre-registered client_id + per-`/authorize` subject mint)
 
-Per-install identity is preserved despite the shared client_id: the Hi authorization server has `metadata_json.mints_subject_per_authorize` set on this client, so every `/authorize` call mints a fresh anonymous `subject_id`. Two Claude Code installs talking to the same client_id end up with two different agent identities on the Hi side.
+The plugin ships a pre-registered OAuth client (`oac_ETbApJKcMETA7spK-ZNK05j8`) and a fixed loopback callback port (`7717`) baked into `.mcp.json`'s `oauth` block. When you click Authenticate in `/mcp`, Claude Code uses this client_id directly instead of doing Dynamic Client Registration. The Hi authorization server has `metadata_json.mints_subject_per_authorize` set on this client, so every `/authorize` call mints a fresh anonymous `subject_id` — two Claude Code installs talking to the same client_id end up with two different agent identities on the Hi side, preserving the per-install anonymity that DCR-based callers (Codex, OpenClaw) get for free.
 
 | Step | What Claude Code does | What Hi does | What the user sees |
 |---|---|---|---|
-| 1. Plugin enable / `/reload-plugins` | Loads `.mcp.json`, sees `oauth.clientId` + `oauth.callbackPort: 7717`, starts loopback listener on 7717 | Nothing yet | Nothing |
-| 2. `/authorize` | Opens browser at `https://auth.hi.hirey.ai/oauth/authorize?client_id=...&redirect_uri=http://localhost:7717/callback&code_challenge=...&code_challenge_method=S256&resource=https://hi.hirey.ai/mcp` | Mints a **fresh anonymous subject** (per-install identity), issues an auth code bound to it, 302-redirects to Claude Code's loopback callback. **No HTML rendered, no consent screen.** | Browser tab opens then closes (~1s) |
-| 3. Token exchange | `POST /oauth/token` with code + PKCE verifier + RFC 8707 `resource` | Returns access token (RS256 JWT, `aud=https://hi.hirey.ai/mcp`, `sub=<new subject>`) + rotating refresh token | Nothing |
-| 4. Subsequent `/mcp` calls | `Authorization: Bearer <token>` on every request | Verifies signature + `aud` exact-match, resolves the Hi installation by `sub`, dispatches tool | Nothing |
+| 1. `/mcp` → `plugin:hirey-hi:hi` → Authenticate | Starts loopback listener on `localhost:7717`, opens browser at `https://auth.hi.hirey.ai/oauth/authorize?client_id=oac_…&redirect_uri=http://localhost:7717/callback&code_challenge=…&code_challenge_method=S256&resource=https://hi.hirey.ai/mcp` | Mints a **fresh anonymous subject** (per-install identity), issues an auth code bound to it, 302-redirects to the loopback callback. **No HTML rendered, no consent screen.** | Browser tab opens then closes (~1s) |
+| 2. Token exchange | `POST /oauth/token` with code + PKCE verifier + RFC 8707 `resource` | Returns access token (RS256 JWT, `aud=https://hi.hirey.ai/mcp`, `sub=<new subject>`) + rotating refresh token | Nothing |
+| 3. Subsequent `/mcp` calls | `Authorization: Bearer <token>` on every request | Verifies signature + `aud` exact-match, resolves the Hi installation by `sub`, dispatches tool | Nothing |
 
 Same end-state as OpenClaw and the Codex plugin: agent self-registers, no human identity is bound. If you want to later tie an installation to a phone-verified human, that's a follow-up workflow inside Hi — it has nothing to do with the OAuth flow above.
 
@@ -62,7 +60,7 @@ The marketplace entry at `.claude-plugin/marketplace.json` (in the repo root) po
 | Distribution | ClawHub `clawhub:hirey` / npm `@hirey/hi-mcp-server` | `codex plugin marketplace add hirey-ai/hirey-codex-plugin` | `/plugin marketplace add hirey-ai/hirey-claude-plugin` |
 | Local install | `npm install` of `@hirey/hi-mcp-server` + `@hirey/hi-agent-receiver` | none | none |
 | Process model | local stdio MCP child + local hi-agent-receiver | remote HTTPS, no local process | remote HTTPS, no local process |
-| Auth | client_credentials baked into local state | OAuth 2.1 (DCR + PKCE) via `codex mcp login hi` | OAuth 2.1 (pre-registered client_id + PKCE) — browser flow auto-fires on plugin enable; per-`/authorize` subject minting keeps each install anonymous |
+| Auth | client_credentials baked into local state | OAuth 2.1 (DCR + PKCE) via `codex mcp login hi` | OAuth 2.1 (pre-registered client_id + PKCE) via `/mcp` Authenticate; per-`/authorize` subject minting keeps each install anonymous. Browser flow auto-trigger on enable is blocked by [#36307](https://github.com/anthropics/claude-code/issues/36307); the `/mcp` step will drop out when that's fixed |
 | Event delivery | local receiver hooks + durable claim | durable claim via `hi_agent_events_wait` | durable claim via `hi_agent_events_wait` |
 | State on user machine | `~/.openclaw/hi-mcp/<profile>/` | Codex keychain entry only | Claude Code keychain entry only |
 | Updates | user re-runs `openclaw plugins install` | Hi backend deploy — no user action | Hi backend deploy — no user action |

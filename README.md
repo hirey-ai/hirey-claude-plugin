@@ -11,20 +11,21 @@ The official Claude Code marketplace for [Hirey Hi](https://hi.hirey.ai) — a p
 # 2) Install and enable the plugin
 /plugin install hirey-hi@hirey
 
-# 3) Authorize this Claude Code install against Hi (zero touch — no Hi account)
-/mcp
-# > select "hi" → "Authenticate"
+# 3) Apply the new MCP server in the current session
+/reload-plugins
 ```
 
-Step 3 takes about a second: Claude Code opens a browser tab that instantly redirects back to a local callback and closes itself. No Hi account, no consent screen, no email/phone — Hi provisions a fresh anonymous agent identity for this Claude Code install in the background.
+That's it. The plugin's `.mcp.json` carries a pre-registered OAuth client + fixed loopback callback port, so on enable Claude Code goes straight to the browser OAuth flow — **no need to open `/mcp` and click "Authenticate" manually**. A browser tab opens, redirects to a local callback, and closes itself in about a second. No Hi account, no consent screen, no email/phone — Hi provisions a fresh anonymous agent identity for this Claude Code install in the background.
 
-Once logged in, ask Claude anything people-shaped — *"find me 10 backend engineers in Tokyo with JLPT N2+"*, *"reach out to the top three from yesterday"*, *"schedule a 30-min Zoom with Alex next Wednesday"* — and it uses Hi's tools directly.
+If for any reason the browser flow does not fire automatically (older Claude Code build, blocked popup, etc.), you can always trigger it from `/mcp` → `hi` → **Authenticate** as a fallback.
+
+Once authorized, ask Claude anything people-shaped — *"find me 10 backend engineers in Tokyo with JLPT N2+"*, *"reach out to the top three from yesterday"*, *"schedule a 30-min Zoom with Alex next Wednesday"* — and it uses Hi's tools directly.
 
 ## What you get
 
 Claude Code picks up three skills + a dynamic tool catalog the moment the plugin is enabled:
 
-- **`/hirey-hi:hi-onboard`** — first-time setup; surfaces the `/mcp` Authenticate flow if you haven't run it yet
+- **`/hirey-hi:hi-onboard`** — first-time setup helper; only needed if the auto-OAuth flow on plugin enable didn't fire and you need to fall back to the `/mcp` Authenticate panel
 - **`/hirey-hi:hi-use`** — workflows for listings, matching feeds, pairings, and meetings
 - **`/hirey-hi:hi-events`** — durable pull for inbound replies, meeting confirmations, and match updates
 
@@ -42,7 +43,7 @@ Claude Code ──(HTTPS + OAuth bearer)──▶ https://hi.hirey.ai/mcp
 ```
 
 - **Remote MCP** ([Streamable HTTP](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports#streamable-http)). No local Node, no daemon, no state dir on your machine.
-- **OAuth 2.1** with [PKCE](https://www.rfc-editor.org/rfc/rfc7636) + [Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591) + [Protected Resource Metadata (RFC 9728)](https://www.rfc-editor.org/rfc/rfc9728) + [Resource Indicators (RFC 8707)](https://www.rfc-editor.org/rfc/rfc8707). Bearer lives in your OS keychain via Claude Code.
+- **OAuth 2.1** with [PKCE](https://www.rfc-editor.org/rfc/rfc7636) + [Protected Resource Metadata (RFC 9728)](https://www.rfc-editor.org/rfc/rfc9728) + [Resource Indicators (RFC 8707)](https://www.rfc-editor.org/rfc/rfc8707). Claude Code's plugin ships a pre-registered shared `client_id` (skipping [Dynamic Client Registration](https://www.rfc-editor.org/rfc/rfc7591) to dodge [anthropics/claude-code#36307](https://github.com/anthropics/claude-code/issues/36307) and trigger the browser flow on enable). Hi mints a fresh anonymous subject for every `/authorize` call against this client, so every install still gets its own per-machine identity. Bearer lives in your OS keychain via Claude Code.
 - **Anonymous identity model** — same as Hi's OpenClaw and Codex plugins. No Hi user account is created or required for Claude Code to use the platform.
 
 ## Privacy & scope
@@ -62,14 +63,22 @@ plugins/
     README.md                        # plugin-level docs (in-depth OAuth flow, etc.)
 ```
 
-This repo is **automatically mirrored** from the `host-plugins/` directory inside Hirey's internal hi-platform repo. Source-of-truth changes happen there; this repo is the published surface. See the in-repo [plugin README](./plugins/hirey-hi/README.md) for the full OAuth walk-through and local-dev instructions.
+This repo is **automatically mirrored** from the `host-plugins-claude/` directory inside Hirey's internal hi-platform repo. Source-of-truth changes happen there; this repo is the published surface. See the in-repo [plugin README](./plugins/hirey-hi/README.md) for the full OAuth walk-through and local-dev instructions.
 
 ## Releases
 
-Tags on this repo follow `vMAJOR.MINOR.PATCH`. Pin a known-good version:
+Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.1.2`** — it ships the auto-OAuth `.mcp.json` shape, so plugin enable triggers the browser flow with no need to open `/mcp` manually.
+
+To stay on the default branch (recommended — backend changes do not require a plugin release):
 
 ```text
-/plugin marketplace add hirey-ai/hirey-claude-plugin@v0.1.0
+/plugin marketplace add hirey-ai/hirey-claude-plugin
+```
+
+To pin to an exact tag, use the git URL with `#ref`:
+
+```text
+/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.1.2
 ```
 
 The plugin manifest version is independent from `hi-mcp-server` / `hi-platform` versions on Hirey's side — backend changes do not require a plugin release because the tool catalog is fetched dynamically.

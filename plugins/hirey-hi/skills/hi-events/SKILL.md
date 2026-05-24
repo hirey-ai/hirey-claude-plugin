@@ -1,5 +1,5 @@
 ---
-description: Drain inbound Hi events (pairing replies, meeting confirmations, match updates, listing reactions) via REST. Use whenever the user asks "any replies?", "what came in?", "is anyone interested?", "what happened with the listings from yesterday?", or any other "check inbound" question. Events are pulled (not pushed) via `GET https://hi.hirey.ai/v1/agent-events/stream` (long-poll) or the `claim` → fetch-by-id → `ack` triplet for large drains. Bearer comes from `~/.config/hi/credentials.json` (see hi-onboard if missing).
+description: Drain inbound Hi events (pairing replies, meeting confirmations, match updates, listing reactions) via REST. Use whenever the user asks "any replies?", "what came in?", "is anyone interested?", "what happened with the listings from yesterday?", or any other "check inbound" question. Events are pulled via the `POST /v1/agent-events/claim` → `GET /v1/agent-events/:eventId` → `POST /v1/agent-events/ack` triplet. (The `/stream` endpoint exists but is **SSE, not long-poll** — its `timeout_ms` query param is server-ignored, so it blocks until a real event arrives. Use `/claim` for tool-driven drain.) Bearer comes from `~/.config/hi/credentials.json` (see hi-onboard if missing).
 ---
 
 # Hi Events (durable pull, REST)
@@ -7,13 +7,15 @@ description: Drain inbound Hi events (pairing replies, meeting confirmations, ma
 Hi keeps an outbox per installation. Events are delivered at-least-once and must be `ack`ed; un-acked events redeliver after the lease expires. No push channel exists for this plugin — pull is the only path.
 
 ```
-GET  https://hi.hirey.ai/v1/agent-events/stream     # long-poll
-POST https://hi.hirey.ai/v1/agent-events/claim      # claim a batch (lease-based)
+POST https://hi.hirey.ai/v1/agent-events/claim      # claim a batch (lease-based) — USE THIS
 GET  https://hi.hirey.ai/v1/agent-events/:eventId   # fetch claimed event payload
 POST https://hi.hirey.ai/v1/agent-events/ack        # ack one or more events
+GET  https://hi.hirey.ai/v1/agent-events/stream     # SSE keepalive stream — DO NOT USE here
 ```
 
-All four need `Authorization: Bearer $HI_TOKEN`.
+All four need `Authorization: Bearer $HI_TOKEN`. Use the `claim` → `eventId` → `ack` triplet for every drain — it's a normal JSON POST that returns immediately with whatever's in the outbox.
+
+> ⚠️ **`/stream` is Server-Sent Events**, not JSON long-poll. Its `timeout_ms` query param is server-ignored: the connection stays open with SSE keepalives until a real event arrives. Using it from `curl` without `-N` (or from `httpx.get()`) will hang. The claim path below avoids this entirely.
 
 ## Use when
 
@@ -26,64 +28,40 @@ All four need `Authorization: Bearer $HI_TOKEN`.
 - the user is starting a new search — go to `hi-use`
 - nothing in the conversation suggests pending events; do not silently poll for the user
 
-## Simple path: one long-poll
+## Simple path: claim + fetch + ack
 
 ```bash
 HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json)
-curl -sS -G "https://hi.hirey.ai/v1/agent-events/stream" \
-  --data-urlencode "timeout_ms=5000" \
-  -H "authorization: Bearer $HI_TOKEN" | jq .
-```
 
-Response shape:
-
-```json
-{
-  "events": [
-    { "event_id": "evt_…", "kind": "pairing.message.inbound", "created_at": "…", "payload": { … }, "stream_seq": 12 }
-  ],
-  "next_cursor": "…",
-  "any_more": false
-}
-```
-
-- If `events` is empty and `any_more:false`, tell the user "no new events" and stop.
-- If `events` is non-empty, summarize per `pairing_id` / `listing_id`. Then `ack`:
-
-```bash
-curl -sS -X POST "https://hi.hirey.ai/v1/agent-events/ack" \
-  -H "authorization: Bearer $HI_TOKEN" \
-  -H 'content-type: application/json' \
-  --data '{"event_ids":["evt_…","evt_…"]}'
-```
-
-**Never skip the ack** — un-acked events redeliver and the user will perceive duplicates.
-
-## Drain path: claim → fetch → ack (only when explicitly draining backlog)
-
-```bash
+# 1) Claim up to 25 events with a 60s lease
 CLAIM=$(curl -sS -X POST "https://hi.hirey.ai/v1/agent-events/claim" \
-  -H "authorization: Bearer $HI_TOKEN" \
-  -H 'content-type: application/json' \
-  --data '{"lease_ms":60000,"max":50}')
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data '{"max":25,"lease_ms":60000}')
 LEASE_ID=$(echo "$CLAIM" | jq -r .lease_id)
-echo "$CLAIM" | jq -r '.event_ids[]' | while read EID; do
+EVENT_IDS=$(echo "$CLAIM" | jq -r '.event_ids[]?')
+
+# 2) Fetch each event payload
+echo "$EVENT_IDS" | while read EID; do
+  [ -z "$EID" ] && continue
   curl -sS "https://hi.hirey.ai/v1/agent-events/$EID" \
     -H "authorization: Bearer $HI_TOKEN" | jq .
 done
-# After showing events to user:
-curl -sS -X POST "https://hi.hirey.ai/v1/agent-events/ack" \
-  -H "authorization: Bearer $HI_TOKEN" \
-  -H 'content-type: application/json' \
-  --data "{\"lease_id\":\"$LEASE_ID\",\"event_ids\":[…]}"
 ```
 
-Use this only when:
-- the user explicitly says "catch me up on everything"
-- you have many pending events and want lease protection against another assistant draining concurrently
-- the simple `/stream` is insufficient (rare)
+If `event_ids` is empty, tell the user "no new events" and stop.
 
-Lease default is 60s — if you crash mid-drain, the lease expires and events redeliver.
+If non-empty, summarize per `pairing_id` / `listing_id`. Then **ack** (don't skip — un-acked events redeliver):
+
+```bash
+ACK_IDS=$(echo "$EVENT_IDS" | jq -R -s -c 'split("\n") | map(select(. != ""))')
+curl -sS -X POST "https://hi.hirey.ai/v1/agent-events/ack" \
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data "{\"event_ids\":$ACK_IDS,\"lease_id\":\"$LEASE_ID\"}"
+```
+
+`lease_id` is optional but recommended — it scopes the ack to your claim so a concurrent drain can't double-ack.
+
+Lease default is 60s — if you crash mid-drain, the lease expires and events redeliver to the next caller.
 
 ## Event shape
 
@@ -109,12 +87,12 @@ Then ask the user which thread to open next; do not auto-open pairings.
 
 ## Token refresh
 
-If `/stream` returns `401 invalid_token`, the bearer expired. Re-run the bootstrap from `hi-onboard` (step 2 refreshes from cached client_credentials), then retry the same `/stream` call once.
+If `/claim` returns `401 invalid_token`, the bearer expired. Re-run the bootstrap from `hi-onboard` (step 2 refreshes from cached client_credentials), then retry the same `/claim` call once.
 
 ## Anti-patterns
 
-- ❌ Polling in a loop. One `/stream` per user turn is the contract. To wait longer, raise `timeout_ms` (cap ~30s).
-- ❌ Skipping `ack`. Un-acked events redeliver.
+- ❌ Hitting `/v1/agent-events/stream` from `curl` (without `-N`) or `httpx.get()` — that endpoint is SSE keepalive, `timeout_ms` is server-ignored, the connection blocks until a real event arrives. Use `/claim` instead.
+- ❌ Polling in a tight loop. One `/claim` per user turn.
+- ❌ Skipping `ack`. Un-acked events redeliver after the lease (60s default) expires.
 - ❌ Acking events you haven't shown the user. Ack = "this human or agent has seen this." Show first, then ack.
-- ❌ Using `claim` for the simple "any replies?" case. Long-poll is fine.
-- ❌ Inventing event kinds the catalog does not list. Surface unfamiliar kinds verbatim.
+- ❌ Inventing event kinds the response does not list. Surface unfamiliar kinds verbatim.

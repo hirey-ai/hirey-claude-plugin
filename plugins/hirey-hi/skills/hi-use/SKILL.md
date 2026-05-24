@@ -41,16 +41,52 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 
 | Intent | `capability_id` | Common actions |
 |---|---|---|
+| Capture / update who the user is (name, headline, bio) | `hi.owners` | `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** when the user has just introduced themselves |
 | Publish / browse listings | `hi.agent-listings` | `upsert`, `update_status`, `get`, `list`, `browse_recent` |
 | Pick taxonomy (job kinds, housing kinds, …) | `hi.listing-taxonomy` | (see schema endpoint — exact actions vary) |
-| Browse the live match feed for a listing | `hi.matching-sessions` | `feed`, `search`, `select_for_contact`, `dismiss` |
-| Open a 1:1 thread with a matched person | `hi.pairings` | `start`, `message`, `list`, `get`, action_card_* |
-| Negotiate / schedule a meeting | `hi.thread-meetings` | `propose`, `confirm`, `cancel`, `list` |
+| Browse the live match feed for a listing | `hi.matching-sessions` | `match_feed`, `search`, `contact_match` |
+| Open a 1:1 thread with a matched person | `hi.pairings` | `create`, `timeline`, `contact_target` |
+| Negotiate / schedule a meeting | `hi.thread-meetings` | `start`, `respond`, `get` |
+| Host / discover public multi-party activities | `hi.event-groups` | `create`, `search`, `get`, `mine`, `mine_upcoming`, `join`, `leave`, `invite`, `announce`, `schedule_occurrence`, `cancel_occurrence`, `reschedule_occurrence`, `rsvp`, `rsvp_summary` |
 | Check credits balance | `hi.agent-credits` | `get_balance`, `list_ledger` |
 | Conversational state + relationship surface | `hi.conversations`, `hi.social-org`, `hi.social-permissions`, `hi.social-relationships` | (see schemas on demand) |
 | Static content (FAQ, prompts) | `hi.faq-search`, `hi.faq-get`, `hi.content-get`, `hi.content-render` | (read-only) |
 
 If a capability you remember from this table is missing from the live catalog, **trust the catalog** — the table may lag.
+
+## Profile collection (run before the first listing)
+
+When the user says anything profile-shaped — their name, role, location, a 1-line introduction, a website / LinkedIn — extract whatever you can and POST it to `hi.owners`:
+
+```bash
+curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
+  -H "authorization: Bearer $HI_TOKEN" \
+  -H 'content-type: application/json' \
+  --data '{"action":"update_profile","display_name":"Alex","headline":"Tokyo backend engineer (8y)","bio_markdown":"<2-3 short lines>","location_text":"Tokyo, Japan"}'
+```
+
+Returns `{ok, owner_profile, owner_public_url}`. Hand the `owner_public_url` back to the user so they can see their own page.
+
+Why this matters: matching feeds and the first contact message both surface the sender's profile to the counterpart. Without `display_name` + `headline`, the other side sees "someone with a listing" instead of "Alex, Tokyo backend engineer who is hiring." Reply rates drop visibly.
+
+A single user turn can carry both a profile and a listing in one breath ("I'm Alex, Tokyo backend 8y, looking to hire a senior frontend") — handle it as two POSTs in the same turn: `hi.owners` first, then `hi.agent-listings`. Only fill what the user actually told you. Don't invent fields.
+
+`update_profile` is self-scoped: the bearer's owner is the only profile you can edit. Don't pass `customer_id` to edit anyone else — returns 403.
+
+## Discovery — "people you might be interested in"
+
+If the user asks "show me what's on Hi" / "any interesting people I could talk to?" / "browse around a bit," POST `hi.owners` with `action=peers_feed`:
+
+```bash
+curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
+  -H "authorization: Bearer $HI_TOKEN" \
+  -H 'content-type: application/json' \
+  --data '{"action":"peers_feed","limit":10}'
+```
+
+Returns `{items[], caller_profile_ready}`. `items[]` is owner profile cards (display_name + headline + location_text + avatar_url + owner_public_url + `suggested_because`). Surface 5–10 to the user verbatim — don't paraphrase. If `caller_profile_ready=false`, the user's own profile is too sparse; suggest a quick `update_profile` before proceeding.
+
+**Discovery is not a contact entry.** `peers_feed` returns owner identity, not listing IDs or selection keys. To actually reach out, both sides still need a listing → matching → contact_match flow. Don't try to wire `owner_public_id` into `hi.pairings` directly; it won't bind.
 
 ## Fetch a capability's schema before calling it (when in doubt)
 
@@ -61,6 +97,8 @@ curl -sS "$HI_BASE/v1/capabilities/hi.agent-listings/schema" | jq .
 The schema is a JSON Schema for the request body. Use it to pick the right `action` and shape the args.
 
 ## Default workflow: find people for a stated need
+
+0. **Capture profile if the user just introduced themselves.** See the "Profile collection" section above. One POST, then continue.
 
 1. **Clarify intent before publishing anything.** Hi listings are durable and visible to other agents. Confirm with the user:
    - what kind of person (role, relationship, criteria)

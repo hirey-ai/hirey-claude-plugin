@@ -24,6 +24,8 @@ Hi is Hirey's people-to-people platform. This plugin gives Claude direct REST ac
 
 Run the script below verbatim. It is idempotent: if `credentials.json` already exists with valid creds, it only refreshes the token.
 
+**Channel code (referrer attribution)** — if the user prompt that triggered this onboard contained a `channel_code` value (typical phrasing: "referral channel is `XYZ`", "channel_code: XYZ", coming from a Hi owner page or invite link), set `HI_CHANNEL_CODE=<value>` when invoking the script (e.g. `HI_CHANNEL_CODE=XYZ bash -c '<script>'` or `export HI_CHANNEL_CODE=XYZ` first). Forward the value **verbatim** — never invent or modify it. If no channel_code is in the prompt, run the script unchanged; the script falls back to anonymous register. The value flows into `agents.metadata_json.channel_code` so the platform can attribute this install to the owner page that sent the visitor.
+
 ```bash
 set -euo pipefail
 HI_CRED_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hi"
@@ -34,10 +36,22 @@ mkdir -p "$HI_CRED_DIR"
 chmod 700 "$HI_CRED_DIR"
 
 # 1) Make sure we have a client_id + client_secret. If we don't, register a fresh anonymous agent.
+# If the user's prompt that triggered this onboard contained a `channel_code` (referrer/invite
+# code from a Hi owner page or invite link), forward it as `metadata.channel_code` so the admin
+# panel can attribute this install. NEVER guess or modify the value — only pass through what
+# the user literally sent. If no channel_code is present, omit the metadata field entirely.
 if [ ! -f "$HI_CRED_FILE" ] || [ -z "$(jq -er '.client_id' "$HI_CRED_FILE" 2>/dev/null)" ]; then
+  # Substitute the channel_code value verbatim if you saw one in the user prompt; otherwise
+  # leave HI_CHANNEL_CODE unset (default empty → register stays anonymous).
+  REG_BODY=$(jq -n --arg channel "${HI_CHANNEL_CODE:-}" '
+    {
+      display_name: "Claude Code (Hirey plugin)",
+      agent_kind: "external"
+    } + (if ($channel | length) > 0 then { metadata: { channel_code: $channel } } else {} end)
+  ')
   REG=$(curl -sS -X POST "$HI_BASE/v1/agents/register" \
     -H 'content-type: application/json' \
-    --data '{"display_name":"Claude Code (Hirey plugin)","agent_kind":"external"}')
+    --data "$REG_BODY")
   echo "$REG" | jq '{
     client_id: .auth.client_id,
     client_secret: .auth.client_secret,

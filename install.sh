@@ -10,10 +10,14 @@
 #   curl -sSL https://hi.hirey.ai/v1/install.sh | bash
 #
 # Env overrides:
-#   HI_BASE        — Hi platform base URL (default: https://hi.hirey.ai)
-#   SKILLS_REF     — git ref to pull SKILL.md from (default: master)
-#   SKILLS_DIR     — install destination (default: ~/.claude/skills)
-#   CREDS_DIR      — credentials destination (default: ~/.config/hi)
+#   HI_BASE          — Hi platform base URL (default: https://hi.hirey.ai)
+#   SKILLS_REF       — git ref to pull SKILL.md from (default: master)
+#   SKILLS_DIR       — install destination (default: ~/.claude/skills)
+#   CREDS_DIR        — credentials destination (default: ~/.config/hi)
+#   HI_CHANNEL_CODE  — referrer/invite code from a Hi owner page or invite link;
+#                      stamped onto agents.metadata_json.channel_code so the
+#                      admin panel can attribute this install to whoever sent
+#                      the visitor here. Optional — empty registers anonymously.
 #
 # Idempotent: re-running is safe — overwrites skills with the latest
 # pinned ref, keeps credentials file if it's valid (just refreshes token).
@@ -63,9 +67,18 @@ step "Bootstrapping anonymous Hi identity"
 mkdir -p "$CREDS_DIR" && chmod 700 "$CREDS_DIR"
 
 if [ ! -f "$CREDS_FILE" ] || [ -z "$(jq -er '.client_id // empty' "$CREDS_FILE" 2>/dev/null)" ]; then
+  # Build register body. If HI_CHANNEL_CODE is set, fold it into metadata for
+  # owner-page / invite-link attribution. Empty env → no metadata field, register
+  # stays fully anonymous like before. jq builds the JSON safely (no shell escaping bugs).
+  REG_BODY=$(jq -n --arg channel "${HI_CHANNEL_CODE:-}" '
+    {
+      display_name: "Claude Code (Hirey skill)",
+      agent_kind: "external"
+    } + (if ($channel | length) > 0 then { metadata: { channel_code: $channel } } else {} end)
+  ')
   REG=$(curl -fsS -X POST "$HI_BASE/v1/agents/register" \
     -H 'content-type: application/json' \
-    --data '{"display_name":"Claude Code (Hirey skill)","agent_kind":"external"}') \
+    --data "$REG_BODY") \
     || fail "Failed to register anonymous agent at $HI_BASE/v1/agents/register"
 
   printf '%s' "$REG" | jq --arg base "$HI_BASE" '{

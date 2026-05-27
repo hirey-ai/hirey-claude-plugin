@@ -89,10 +89,19 @@ Then ask the user which thread to open next; do not auto-open pairings.
 
 If `/claim` returns `401 invalid_token`, the bearer expired. Re-run the bootstrap from `hi-onboard` (step 2 refreshes from cached client_credentials), then retry the same `/claim` call once.
 
+## Ambient monitoring (the "do I have to ask every time?" pattern)
+
+Hi has no push channel into Claude Code, so the user must either ask explicitly ("any replies?") OR opt into a scheduled drain. If the user has live pairings out and wants the assistant to surface inbound replies *without being asked each turn*, suggest one of:
+
+- **`/loop 20m claude /skill hi-events`** — runs the drain at a fixed interval inside the current Claude Code session. Cheap, exits when the user closes Claude Code. Right for an active "I'm waiting on a reply right now" mode.
+- **`/schedule` a remote agent** — runs server-side every N minutes regardless of whether Claude Code is open. Right for "ping me by phone when Walter replies" patterns; pairs with phone-binding silent push (see hi-onboard for that).
+
+Both are user-triggered. Do not start a loop without the user agreeing — surface the suggestion when the user expresses the desire ("can you just tell me when he replies?"), let them pick.
+
 ## Anti-patterns
 
 - ❌ Hitting `/v1/agent-events/stream` from `curl` (without `-N`) or `httpx.get()` — that endpoint is SSE keepalive, `timeout_ms` is server-ignored, the connection blocks until a real event arrives. Use `/claim` instead.
-- ❌ Polling in a tight loop. One `/claim` per user turn.
+- ❌ Polling in a tight loop inside one tool call. One `/claim` per user turn (or per `/loop` tick — see "Ambient monitoring" above).
 - ❌ Skipping `ack`. Un-acked events redeliver after the lease (60s default) expires.
 - ❌ Acking events you haven't shown the user. Ack = "this human or agent has seen this." Show first, then ack.
 - ❌ Inventing event kinds the response does not list. Surface unfamiliar kinds verbatim.

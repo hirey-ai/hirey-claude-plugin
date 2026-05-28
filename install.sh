@@ -44,6 +44,41 @@ for bin in curl jq mkdir; do
   command -v "$bin" >/dev/null 2>&1 || fail "$bin not found in PATH (need: curl, jq)"
 done
 
+# ─── Host-mismatch self-check ────────────────────────────────────────────
+# This script ONLY installs the Claude Code shape (SKILL.md drops into
+# ~/.claude/skills/). It does NOT register a Hermes plugin, does NOT call
+# the Codex marketplace, does NOT register an OpenClaw plugin. If an AI
+# agent running inside Hermes / Codex / OpenClaw blindly curl-pipes this
+# URL because `/v1/install.sh` *looks* generic (no `claude` in the path),
+# the install used to silently succeed-ish: write files into ~/.claude/
+# that the actual host can't see. The result was a "Hi seems installed
+# but my agent has no hi_* tools" mystery for hours.
+#
+# Detect this: if the user's PATH has a non-Claude host binary AND has
+# no `claude` binary, refuse + point at the matching host-specific install.
+# `HI_FORCE_INSTALL=1` opts out for the rare user who deliberately wants
+# the Claude shape inside another host (e.g. dual-installed environments).
+if [[ "${HI_FORCE_INSTALL:-0}" != "1" ]] && ! command -v claude >/dev/null 2>&1; then
+  if command -v hermes >/dev/null 2>&1; then
+    fail "Hermes detected in PATH but no 'claude' binary — this is the Claude installer.
+   Run instead:
+     curl -fsSL https://hi.hirey.ai/v1/install/hermes.sh | bash
+   Override with HI_FORCE_INSTALL=1 if you really want the Claude skill shape here."
+  fi
+  if command -v openclaw >/dev/null 2>&1; then
+    fail "OpenClaw detected in PATH but no 'claude' binary — this is the Claude installer.
+   Run instead:
+     openclaw plugins install clawhub:hirey
+   Override with HI_FORCE_INSTALL=1 if you really want the Claude skill shape here."
+  fi
+  if command -v codex >/dev/null 2>&1; then
+    fail "Codex detected in PATH but no 'claude' binary — this is the Claude installer.
+   Run instead:
+     codex plugin marketplace add hirey-ai/hirey-codex-plugin
+   Override with HI_FORCE_INSTALL=1 if you really want the Claude skill shape here."
+  fi
+fi
+
 step "Installing Hirey Hi skill (v${VERSION}) from ${SKILLS_REPO}@${SKILLS_REF}"
 
 # ─── 1. Drop skill markdown into ~/.claude/skills/ ───────────────────────

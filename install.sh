@@ -41,7 +41,11 @@ fail() { printf "${RED}✗${NC} %s\n" "$1" >&2; exit 1; }
 
 # ─── Preflight ───────────────────────────────────────────────────────────
 for bin in curl jq mkdir; do
-  command -v "$bin" >/dev/null 2>&1 || fail "$bin not found in PATH (need: curl, jq)"
+  command -v "$bin" >/dev/null 2>&1 || fail "$bin not found in PATH. The Claude installer needs curl + jq.
+   Install it, then re-run:
+     macOS:          brew install $bin
+     Debian/Ubuntu:  sudo apt-get install -y $bin
+     Fedora/RHEL:    sudo dnf install -y $bin"
 done
 
 # ─── Host-mismatch self-check ────────────────────────────────────────────
@@ -170,7 +174,7 @@ AGENT_ID=$(jq -r .agent_id "$CREDS_FILE")
 
 # ─── 5. Done ─────────────────────────────────────────────────────────────
 echo
-ok "Hirey Hi is ready (agent_id=${GREEN}${AGENT_ID}${NC})"
+printf "${GREEN}✓${NC} Hirey Hi is ready (agent_id=${GREEN}%s${NC})\n" "$AGENT_ID"
 echo
 echo "  Skills installed at: $SKILLS_DIR/hi-{onboard,use,events}/"
 echo "  Credentials at:      $CREDS_FILE (mode 600)"

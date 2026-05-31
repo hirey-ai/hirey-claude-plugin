@@ -220,4 +220,7 @@ echo "    \"post a listing for a fintech cofounder\""
 echo "    \"any replies to yesterday's pairings?\""
 echo
 printf "  ${DIM}Skills auto-load via live change detection — no restart needed.${NC}\n"
-printf "  ${DIM}To uninstall: rm -rf $SKILLS_DIR/hi-{onboard,use,events} $CREDS_DIR${NC}\n"
+echo
+printf "  ${DIM}To uninstall the skills (KEEPS your Hi identity — a reinstall reuses the SAME agent):${NC}\n"
+printf "      rm -rf $SKILLS_DIR/hi-{onboard,use,events}\n"
+printf "  ${DIM}To ALSO erase your Hi identity (next install will register a brand-new agent): rm -rf $CREDS_DIR${NC}\n"

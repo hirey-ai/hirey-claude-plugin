@@ -35,8 +35,14 @@ Note: Claude Code may install plugins in a disabled state requiring `claude plug
 
 ### Uninstall
 
+Remove the skills but **keep your Hi identity** (`~/.config/hi`). That file is your durable, reusable agent credential — keeping it means a later reinstall re-attaches to the *same* agent. Deleting it is the single biggest cause of orphaned/duplicate anonymous agents.
+
 ```bash
-rm -rf ~/.claude/skills/hi-{onboard,use,events} ~/.config/hi
+# Default: remove skills only (keeps identity → reinstall reuses the same agent)
+rm -rf ~/.claude/skills/hi-{onboard,use,events}
+
+# Full reset: also erase your Hi identity (next install registers a brand-new agent)
+rm -rf ~/.config/hi
 ```
 
 ## What you get

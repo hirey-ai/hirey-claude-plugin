@@ -98,7 +98,7 @@ if [ "$NOW" -ge "$EXP_AT" ]; then
     .access_token = $tok.access_token
     | .access_token_issued_at = ($now | tonumber)
     | .access_token_expires_in = $tok.expires_in
-  ' "$HI_CRED_FILE" > "$HI_CRED_FILE.tmp" && mv "$HI_CRED_FILE.tmp" "$HI_CRED_FILE"
+  ' "$HI_CRED_FILE" > "$HI_CRED_FILE.tmp.$$" && mv "$HI_CRED_FILE.tmp.$$" "$HI_CRED_FILE"
 fi
 
 # 3) Activate the install (idempotent — second call is a no-op).
@@ -115,7 +115,7 @@ If any step exits non-zero or returns `error` JSON, report the error to the user
 
 - `agent_register_failed` — Hi platform is unreachable. Network issue, not a plugin issue. Surface the message and stop.
 - `hi_auth_client_register_failed:*` — hi-auth service is down. Surface and stop.
-- `invalid_grant` from `/oauth/token` — credentials file is stale (deleted client?). Delete `~/.config/hi/credentials.json` and re-run this skill from step 1.
+- `invalid_grant` from `/oauth/token` — the OAuth client was revoked/expired server-side. **Do NOT auto-delete `~/.config/hi/credentials.json`** — deleting it mints a brand-new agent and orphans the existing agent + any phone-bound workspace data. Surface the error to the user and let THEM decide: if a phone was bound, the workspace data is recoverable by re-binding the same phone on a fresh identity, so discarding creds is only safe with explicit user consent.
 - `installation_not_active` from `/v1/agents/activate` — server already moved the install to terminal state. Treat as fatal, surface, ask the user if they want a fresh identity (`rm ~/.config/hi/credentials.json` + redo).
 
 ## What to tell the user

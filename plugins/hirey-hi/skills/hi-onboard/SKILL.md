@@ -98,7 +98,7 @@ if [ "$NOW" -ge "$EXP_AT" ]; then
     .access_token = $tok.access_token
     | .access_token_issued_at = ($now | tonumber)
     | .access_token_expires_in = $tok.expires_in
-  ' "$HI_CRED_FILE" > "$HI_CRED_FILE.tmp.$$" && mv "$HI_CRED_FILE.tmp.$$" "$HI_CRED_FILE"
+  ' "$HI_CRED_FILE" > "$HI_CRED_FILE.tmp.$$" && mv "$HI_CRED_FILE.tmp.$$" "$HI_CRED_FILE" && chmod 600 "$HI_CRED_FILE"
 fi
 
 # 3) Activate the install (idempotent — second call is a no-op).

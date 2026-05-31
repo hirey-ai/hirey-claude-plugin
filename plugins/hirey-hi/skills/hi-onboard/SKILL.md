@@ -40,7 +40,20 @@ chmod 700 "$HI_CRED_DIR"
 # code from a Hi owner page or invite link), forward it as `metadata.channel_code` so the admin
 # panel can attribute this install. NEVER guess or modify the value — only pass through what
 # the user literally sent. If no channel_code is present, omit the metadata field entirely.
-if [ ! -f "$HI_CRED_FILE" ] || [ -z "$(jq -er '.client_id' "$HI_CRED_FILE" 2>/dev/null)" ]; then
+#
+# IDENTITY DURABILITY — DO NOT re-register when the creds file EXISTS but is unreadable or
+# corrupt: that silently mints a NEW Hi agent and ORPHANS the user's real identity (their
+# listings, credits, phone-bound workspace). Register ONLY when the file is truly ABSENT; a
+# present-but-unusable file is a hard stop the user must resolve (fix perms, or rm to start fresh).
+if [ -e "$HI_CRED_FILE" ] && ! [ -r "$HI_CRED_FILE" ]; then
+  echo "ERROR: $HI_CRED_FILE exists but is unreadable. NOT registering a new identity (would orphan your Hi agent + data). Fix: chmod 600 \"$HI_CRED_FILE\" (or rm it to deliberately start fresh), then retry." >&2
+  exit 1
+fi
+if [ -e "$HI_CRED_FILE" ] && [ -z "$(jq -er '.client_id // empty' "$HI_CRED_FILE" 2>/dev/null)" ]; then
+  echo "ERROR: $HI_CRED_FILE exists but has no valid client_id (corrupt/empty). NOT silently registering a new identity (would orphan your Hi agent + data). If junk: rm \"$HI_CRED_FILE\" then retry; otherwise restore from backup." >&2
+  exit 1
+fi
+if [ ! -e "$HI_CRED_FILE" ]; then
   # Substitute the channel_code value verbatim if you saw one in the user prompt; otherwise
   # leave HI_CHANNEL_CODE unset (default empty → register stays anonymous).
   REG_BODY=$(jq -n --arg channel "${HI_CHANNEL_CODE:-}" '

@@ -105,36 +105,71 @@ printf "    ${DIM}- hi-onboard, hi-use, hi-events${NC}\n"
 step "Bootstrapping anonymous Hi identity"
 mkdir -p "$CREDS_DIR" && chmod 700 "$CREDS_DIR"
 
-if [ ! -f "$CREDS_FILE" ] || [ -z "$(jq -er '.client_id // empty' "$CREDS_FILE" 2>/dev/null)" ]; then
-  # Build register body. If HI_CHANNEL_CODE is set, fold it into metadata for
-  # owner-page / invite-link attribution. Empty env → no metadata field, register
-  # stays fully anonymous like before. jq builds the JSON safely (no shell escaping bugs).
-  REG_BODY=$(jq -n --arg channel "${HI_CHANNEL_CODE:-}" '
-    {
-      display_name: "Claude Code (Hirey skill)",
-      agent_kind: "external"
-    } + (if ($channel | length) > 0 then { metadata: { channel_code: $channel } } else {} end)
-  ')
-  REG=$(curl -fsS -X POST "$HI_BASE/v1/agents/register" \
-    -H 'content-type: application/json' \
-    --data "$REG_BODY") \
-    || fail "Failed to register anonymous agent at $HI_BASE/v1/agents/register"
+# Helper: does the creds file already hold a usable client_id?
+creds_have_client_id() { [ -s "$CREDS_FILE" ] && [ -n "$(jq -er '.client_id // empty' "$CREDS_FILE" 2>/dev/null)" ]; }
 
-  printf '%s' "$REG" | jq --arg base "$HI_BASE" '{
-    client_id:          .auth.client_id,
-    client_secret:      .auth.client_secret,
-    agent_id:           .agent.agent_id,
-    installation_id:    .installation.installation_id,
-    issuer:             .auth.issuer,
-    audience:           .auth.audience,
-    token_url:          .auth.token_url,
-    platform_base_url:  $base,
-    access_token:           null,
-    access_token_issued_at: 0,
-    access_token_expires_in: 0
-  }' > "$CREDS_FILE"
-  chmod 600 "$CREDS_FILE"
-  ok "Anonymous agent registered: $(jq -r .agent_id "$CREDS_FILE")"
+# CRITICAL (identity durability): re-registering when a creds file EXISTS but is merely
+# unreadable / corrupt / wrong-HOME silently mints a NEW Hi agent and ORPHANS the user's
+# real identity (their listings, credits, phone-bound workspace). Audit found 204/216 prod
+# agents are orphans, largely from exactly this. So: register ONLY when the file is truly
+# ABSENT. A present-but-unusable file is a LOUD error the user must resolve explicitly —
+# orphaning must never be silent/accidental.
+if [ -e "$CREDS_FILE" ] && ! [ -r "$CREDS_FILE" ]; then
+  fail "Credentials exist but are not readable: $CREDS_FILE
+   Refusing to register a NEW Hi identity — that would orphan your existing agent + data.
+   Fix it:  chmod 600 \"$CREDS_FILE\"   (or, to deliberately start fresh: rm it, then re-run)"
+fi
+if [ -e "$CREDS_FILE" ] && ! creds_have_client_id; then
+  fail "Credentials exist but have no valid client_id (corrupt/empty): $CREDS_FILE
+   Refusing to silently register a NEW Hi identity — that would orphan your existing agent + data.
+   If this file is junk:  rm \"$CREDS_FILE\"  then re-run.  Otherwise restore it from backup."
+fi
+
+if ! [ -e "$CREDS_FILE" ]; then
+  # Serialize concurrent installers: two Claude sessions racing on a fresh machine would
+  # otherwise each mint a separate agent. mkdir is an atomic cross-process mutex.
+  LOCK_DIR="$CREDS_DIR/.register.lock"
+  if mkdir "$LOCK_DIR" 2>/dev/null; then
+    trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
+  else
+    # Another installer holds the lock — wait briefly for it to write valid creds.
+    for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; creds_have_client_id && break; done
+  fi
+
+  if creds_have_client_id; then
+    ok "Existing credentials at $CREDS_FILE — keeping agent_id=$(jq -r .agent_id "$CREDS_FILE")"
+  else
+    # Build register body. If HI_CHANNEL_CODE is set, fold it into metadata for
+    # owner-page / invite-link attribution. Empty env → no metadata field, register
+    # stays fully anonymous like before. jq builds the JSON safely (no shell escaping bugs).
+    REG_BODY=$(jq -n --arg channel "${HI_CHANNEL_CODE:-}" '
+      {
+        display_name: "Claude Code (Hirey skill)",
+        agent_kind: "external"
+      } + (if ($channel | length) > 0 then { metadata: { channel_code: $channel } } else {} end)
+    ')
+    REG=$(curl -fsS -X POST "$HI_BASE/v1/agents/register" \
+      -H 'content-type: application/json' \
+      --data "$REG_BODY") \
+      || fail "Failed to register anonymous agent at $HI_BASE/v1/agents/register"
+
+    printf '%s' "$REG" | jq --arg base "$HI_BASE" '{
+      client_id:          .auth.client_id,
+      client_secret:      .auth.client_secret,
+      agent_id:           .agent.agent_id,
+      installation_id:    .installation.installation_id,
+      issuer:             .auth.issuer,
+      audience:           .auth.audience,
+      token_url:          .auth.token_url,
+      platform_base_url:  $base,
+      access_token:           null,
+      access_token_issued_at: 0,
+      access_token_expires_in: 0
+    }' > "$CREDS_FILE"
+    chmod 600 "$CREDS_FILE"
+    ok "Anonymous agent registered: $(jq -r .agent_id "$CREDS_FILE")"
+  fi
+  rmdir "$LOCK_DIR" 2>/dev/null || true
 else
   ok "Existing credentials at $CREDS_FILE — keeping agent_id=$(jq -r .agent_id "$CREDS_FILE")"
 fi

@@ -41,6 +41,7 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 
 | Intent | `capability_id` | Common actions |
 |---|---|---|
+| **Find a specific person / listing by NAME or free text** (no listing needed, anonymous) | `hi.owners` | **`search`** (`q="walter"` / `q="founder building agent infra"`) — see "Search by name" below |
 | Capture / update who the user is (name, headline, bio) | `hi.owners` | `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** when the user has just introduced themselves |
 | Publish / browse listings | `hi.agent-listings` | `upsert`, `update_status`, `get`, `list`, `browse_recent` |
 | Pick taxonomy (job kinds, housing kinds, …) | `hi.listing-taxonomy` | (see schema endpoint — exact actions vary) |
@@ -72,6 +73,31 @@ Why this matters: matching feeds and the first contact message both surface the 
 A single user turn can carry both a profile and a listing in one breath ("I'm Alex, Tokyo backend 8y, looking to hire a senior frontend") — handle it as two POSTs in the same turn: `hi.owners` first, then `hi.agent-listings`. Only fill what the user actually told you. Don't invent fields.
 
 `update_profile` is self-scoped: the bearer's owner is the only profile you can edit. Don't pass `customer_id` to edit anyone else — returns 403.
+
+## Search by NAME or free text — "find me a person/listing called X"
+
+When the user names someone or describes who/what they're looking for — **"给我搜一个叫 walter 的人"**,
+"find a founder building agent infra", "搜一下东京的后端招聘" — use `hi.owners` with `action=search`.
+This is the by-name / free-text entry point: **anonymous (no login), no listing required**, fuzzy +
+partial + typo-tolerant, bilingual (it auto-expands EN↔中文 — searching "walter" also matches 沃尔特,
+and a Chinese query matches English profiles). It searches **both owner profiles and listings**.
+
+```bash
+curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
+  -H "authorization: Bearer $HI_TOKEN" \
+  -H 'content-type: application/json' \
+  --data '{"action":"search","q":"walter"}'
+```
+
+Returns `{query, understanding, people[], listings[]}`. `people[]` = matching owner cards
+(display_name + headline + owner_public_url); `listings[]` = matching public listings (preview +
+publisher card). `understanding` shows how the query was expanded (intent + term groups) — for
+transparency, don't surface it to the user. Show the people + listings; offer to open a pairing
+(listing → matching → contact_match) if the user wants to reach someone.
+
+Use `search` (not `matching_sessions.search`) for "find a specific person/thing by name or keywords."
+Use `matching_sessions.search` only when the user already has a published listing and wants
+structured role/requirement matchmaking against it.
 
 ## Discovery — "people you might be interested in"
 

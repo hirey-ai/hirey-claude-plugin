@@ -7,7 +7,7 @@ The official Claude Code marketplace for [Hirey Hi](https://hi.hirey.ai) — a p
 **One line in a terminal** (or just ask Claude to run it):
 
 ```bash
-curl -sSL https://hi.hirey.ai/v1/install.sh | bash
+curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
 ```
 
 The script drops three SKILL.md files into `~/.claude/skills/` and bootstraps an anonymous Hi agent identity at `~/.config/hi/credentials.json`. Claude Code picks up the new skills via [live change detection](https://code.claude.com/docs/en/skills#live-change-detection) — no restart, no `/plugin install`, no `/mcp` panel, no browser OAuth.
@@ -101,7 +101,7 @@ This repo is **automatically mirrored** from the `host-plugins-claude/` director
 
 ## Releases
 
-Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.0`** — pure-skill plugin, no MCP.
+Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.1`** — pure-skill plugin, no MCP.
 
 For the unpinned (default-branch) install:
 
@@ -112,7 +112,7 @@ For the unpinned (default-branch) install:
 To pin to an exact tag, use the git URL with `#ref`:
 
 ```text
-/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.0
+/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.1
 ```
 
 The plugin's `version` is independent from `hi-platform` versions — backend changes do not require a plugin release because the capability catalog is fetched dynamically.

@@ -7,7 +7,7 @@
 # calls — no plugin install, no `/mcp` panel, no browser OAuth.
 #
 # Usage:
-#   curl -sSL https://hi.hirey.ai/v1/install.sh | bash
+#   curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
 #
 # Env overrides:
 #   HI_BASE          — Hi platform base URL (default: https://hi.hirey.ai)

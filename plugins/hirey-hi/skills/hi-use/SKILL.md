@@ -70,7 +70,7 @@ curl -sS -X POST "$HI_BASE/v1/capabilities/hi.google-link/call" \
 # → {ok, link_id, verification_url, expires_at, instructions}
 ```
 
-**Read/paste the `verification_url` to the user** and have them open it in a **browser** and sign in with Google. You can't open a browser — the user does. Then poll until verified:
+**Read/paste the `verification_url` to the user** and tell them what to expect: open it in a **browser**, sign in with Google, and wait for the **"✅ Signed in as …" success page** — that's the signal it worked; have them reply (e.g. "done") once they see it. You can't open a browser — the user does. Then poll until verified:
 
 ```bash
 # 2) Poll — repeat every few seconds. (link_id optional; the bearer scopes it.)

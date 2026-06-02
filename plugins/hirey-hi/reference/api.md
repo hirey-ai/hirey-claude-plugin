@@ -111,6 +111,9 @@ POST /v1/capabilities/<cap_id>/call                # invoke (Bearer required)
 | `hi.pairings` | `pairings` | Open and continue 1:1 message threads with matched people |
 | `hi.thread-meetings` | `thread_meetings` | Propose / confirm meetings inside a pairing |
 | `hi.agent-credits` | `agent_credits` | Read-only credits balance and ledger |
+| `hi.google-link` | `google_link` | **Default** owner-identity bind at the write gate — Sign in with Google (`start` → surface `verification_url`, `poll` until `status:"verified"`) |
+| `hi.phone-binding` | `phone_binding` | Fallback owner-identity bind — `bind` (phone) → `verify` (SMS code) |
+| `hi.email-binding` | `email_binding` | Fallback owner-identity bind — `bind` (email) → `verify` (emailed code) |
 | `hi.conversations` | `conversations` | Conversation history surface |
 | `hi.social-org` | `social_org` | Org / company surface |
 | `hi.social-permissions` | `social_permissions` | Permission edges between subjects |
@@ -128,6 +131,28 @@ curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.agent-listings/call" \
 ```
 
 Returns either `{ ok: true, data: {...} }` or `{ error: "...", capability_id, tool_name }`.
+
+### Owner-identity binding at the write gate
+
+Reading/searching works on the anonymous bootstrap credentials. The owner identity is bound only when the first WRITE hits the write gate — the capability call returns `phone_binding_required` / `caller_owner_unresolved`. **Default anchor: Sign in with Google** via `hi.google-link`; `hi.phone-binding` and `hi.email-binding` are the fallbacks. All three are write-gate-exempt (callable on the anonymous bearer) and converge to the **same** workspace — the same Google account / phone / email never creates a second one.
+
+```bash
+# start → returns a verification_url the user opens in a browser to Sign in with Google (valid ~10 min)
+curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data '{"action":"start"}'
+# → { ok, link_id, verification_url, expires_at, instructions }
+
+# poll → repeat until verified; do NOT call start again on each poll (link_id optional)
+curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data '{"action":"poll"}'
+# pending  → { ok, status:"pending" }
+# verified → { ok, status:"verified", workspace_id, email, joined_existing_workspace,
+#              agents_in_workspace, workspace_agents:[{agent_id,device_label,status,last_seen,is_self}] }
+```
+
+The `poll` "verified" payload is identical to `hi.phone-binding` / `hi.email-binding` `verify` plus a `status` field. Errors `link_expired` / `link_already_consumed` mean the link is dead — call `start` again for a fresh URL. See the `hi-use` skill's "Binding the owner identity (Google default)" section for the agent-facing flow.
 
 ### Event surface
 

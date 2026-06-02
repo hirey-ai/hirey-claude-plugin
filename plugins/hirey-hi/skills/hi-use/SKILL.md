@@ -50,14 +50,49 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 | Negotiate / schedule a meeting | `hi.thread-meetings` | `start`, `respond`, `get` |
 | Host / discover public multi-party activities | `hi.event-groups` | `create`, `search`, `get`, `mine`, `mine_upcoming`, `join`, `leave`, `invite`, `announce`, `schedule_occurrence`, `cancel_occurrence`, `reschedule_occurrence`, `rsvp`, `rsvp_summary` |
 | Check credits balance | `hi.agent-credits` | `get_balance`, `list_ledger` |
+| **Bind the owner identity at the first write** (Sign in with Google — default) | `hi.google-link` | `start`, `poll` — see "Binding the owner identity" below; `hi.phone-binding` / `hi.email-binding` are the fallbacks |
 | Conversational state + relationship surface | `hi.conversations`, `hi.social-org`, `hi.social-permissions`, `hi.social-relationships` | (see schemas on demand) |
 | Static content (FAQ, prompts) | `hi.faq-search`, `hi.faq-get`, `hi.content-get`, `hi.content-render` | (read-only) |
 
 If a capability you remember from this table is missing from the live catalog, **trust the catalog** — the table may lag.
 
+## Binding the owner identity (Google default)
+
+The anonymous credentials in `~/.config/hi/credentials.json` are the **connection** layer — they let you read and search immediately. The **owner identity** is bound separately, and only when the user's first WRITE hits the write gate: a capability call (e.g. `hi.agent-listings` `upsert`, `hi.matching-sessions` `contact_match`) returns `phone_binding_required` (a.k.a. `caller_owner_unresolved`). Binding proves who the owner is and joins this device to their workspace. There are **three equivalent anchors — default to Google:**
+
+**DEFAULT — Sign in with Google** (`hi.google-link`; lowest friction, nothing to type). Start the link, read the URL to the user, then poll:
+
+```bash
+# 1) Start — returns a verification_url valid ~10 min.
+curl -sS -X POST "$HI_BASE/v1/capabilities/hi.google-link/call" \
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data '{"action":"start"}'
+# → {ok, link_id, verification_url, expires_at, instructions}
+```
+
+**Read/paste the `verification_url` to the user** and have them open it in a **browser** and sign in with Google. You can't open a browser — the user does. Then poll until verified:
+
+```bash
+# 2) Poll — repeat every few seconds. (link_id optional; the bearer scopes it.)
+curl -sS -X POST "$HI_BASE/v1/capabilities/hi.google-link/call" \
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data '{"action":"poll"}'
+# pending  → {ok, status:"pending"}   ← keep polling; do NOT call start again
+# verified → {ok, status:"verified", workspace_id, email, joined_existing_workspace,
+#             agents_in_workspace, workspace_agents:[{agent_id,device_label,status,last_seen,is_self}]}
+```
+
+While the user hasn't finished it returns `status:"pending"` — keep polling, **do not call `start` again on each poll**. If `start`/`poll` returns `link_expired` or `link_already_consumed`, tell the user and call `start` once more to get a fresh URL.
+
+**Fallbacks** (offer only if the user prefers them — all three converge to the same workspace):
+- **phone** — `hi.phone-binding`: `bind` (user gives a phone number) → `verify` with the SMS code.
+- **email** — `hi.email-binding`: `bind` (user gives an email) → `verify` with the emailed code.
+
+The `google-link` `poll` response is identical to `phone-binding`/`email-binding` `verify` (plus a `status` field), so the continuity guidance below applies to all three. Offer Google first ("I can sign you in with Google — want me to?"); only fall back to phone/email if the user asks. New to Hi → binding creates the agent + a fresh workspace; returning (any anchor, used before) → the **same** Google account / phone / email rejoins the existing workspace, and the verified response carries `joined_existing_workspace` + `workspace_agents` — say it out loud and list their devices. Because every write requires a bind, offer Google sign-in early rather than after the user has created data.
+
 ## Device identity & continuity (name your devices · move identity across machines)
 
-Hi identity = the install-time credential in `~/.config/hi/credentials.json`; phone binding anchors it to a durable workspace. Three things keep multi-device life sane:
+Hi identity = the install-time credential in `~/.config/hi/credentials.json`; binding the owner identity (Google by default — see above — or phone/email) anchors it to a durable workspace. Three things keep multi-device life sane:
 
 **Name this device** — in a multi-device workspace, give each agent/device a self-label so the user can tell them apart. The label is **internal** (never shown to counterparts):
 
@@ -67,7 +102,7 @@ curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
   --data '{"action":"set_device_label","device_label":"my MacBook (Claude)"}'
 ```
 
-**On phone login, tell the user what they rejoined** — `hi.phone-binding` `verify` returns `workspace_agents:[{agent_id,device_label,status,last_seen,is_self}]` + `joined_existing_workspace`. When `joined_existing_workspace=true`, say it out loud: *"You're back in your existing workspace — your listings, threads, and replies are all here, and this device can reply to them."* List the devices by `device_label`. This kills the "did I lose everything / am I a new agent now?" worry.
+**On sign-in, tell the user what they rejoined** — the bind response (`hi.google-link` `poll` once `status:"verified"`, or `hi.phone-binding`/`hi.email-binding` `verify`) returns `workspace_agents:[{agent_id,device_label,status,last_seen,is_self}]` + `joined_existing_workspace`. When `joined_existing_workspace=true`, say it out loud: *"You're back in your existing workspace — your listings, threads, and replies are all here, and this device can reply to them."* List the devices by `device_label`. This kills the "did I lose everything / am I a new agent now?" worry.
 
 **Carry your identity to a NEW machine (claim re-attach)** — when the user reinstalls / switches machines / lost their creds and does NOT want a brand-new empty agent:
 1. On the OLD (working, phone-bound) device, mint a one-time transfer token:
@@ -80,7 +115,7 @@ curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
    curl -sS -X POST "$HI_BASE/v1/agents/claim/redeem" -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' --data '{"claim_token":"<paste>"}'
    # → {ok, agent_id}. This device IS that agent now — listings/threads/replies all follow.
    ```
-`export` requires the OLD device to be phone-bound (proof of ownership). If the user can't reach the old device, the fallback still works: phone-bind the SAME number on the new device — it rejoins the same workspace (you just get one extra device entry).
+`export` requires the OLD device to have a bound owner identity (Google/phone/email — proof of ownership). If the user can't reach the old device, the fallback still works: on the new device, sign in with the SAME Google account (default) — or bind the same phone/email — and it rejoins the same workspace (you just get one extra device entry).
 
 ## Profile collection (run before the first listing)
 
@@ -225,7 +260,7 @@ Several distinct platform errors all look like "no listing" to a quick reader. T
 | Error code | What it actually means | What to do |
 |---|---|---|
 | `missing_listing_selection_anchor` | The pairing/contact call didn't include a `listing_id` (your source listing) AND a `selected_listing_id`/`selection_key` (the target). | Call `hi.owners` `action="list_listings"` (no args = your own) to find an active listing; if none, ask user to publish one before contacting. Then retry with both anchors filled. |
-| `caller_owner_unresolved` | The caller agent has no `owner_customer_id` — typically an anonymous bootstrap that never phone-bound. | Tell user this account isn't bound to anyone yet; they can either `phone_binding` to unify devices, or just publish a listing to start participating. |
+| `caller_owner_unresolved` / `phone_binding_required` | The caller agent has no `owner_customer_id` — typically an anonymous bootstrap that hasn't bound an owner identity yet (this IS the write gate). | Bind the owner identity — **default: Sign in with Google** (`hi.google-link`; see "Binding the owner identity" above), with `hi.phone-binding` / `hi.email-binding` as fallbacks. After the bind verifies, retry the write. |
 | `missing_source_listing_owner` | The chosen source `listing_id` exists but its subject is missing. Rare — usually a stale/archived listing. | Refresh `hi.owners` `action="list_listings"` (use defaults — it now includes `paused`/`completed` not just `open`) and pick a current one. |
 | `profile_required: missing display_name` | The platform's outbound gate needs a name to surface to the counterpart. | Call `hi.owners` `action="update_profile"` with at least `display_name` from what the user has told you. After that the gate passes for this caller from then on. |
 

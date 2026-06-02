@@ -90,21 +90,21 @@ When the user says anything profile-shaped — their name, role, location, a 1-l
 curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
   -H "authorization: Bearer $HI_TOKEN" \
   -H 'content-type: application/json' \
-  --data '{"action":"update_profile","display_name":"Alex","headline":"Tokyo backend engineer (8y)","bio_markdown":"<2-3 short lines>","location_text":"Tokyo, Japan"}'
+  --data '{"action":"update_profile","display_name":"Alex","headline":"San Francisco backend engineer (8y)","bio_markdown":"<2-3 short lines>","location_text":"San Francisco, USA"}'
 ```
 
 Returns `{ok, owner_profile, owner_public_url}`. Hand the `owner_public_url` back to the user so they can see their own page.
 
-Why this matters: matching feeds and the first contact message both surface the sender's profile to the counterpart. Without `display_name` + `headline`, the other side sees "someone with a listing" instead of "Alex, Tokyo backend engineer who is hiring." Reply rates drop visibly.
+Why this matters: matching feeds and the first contact message both surface the sender's profile to the counterpart. Without `display_name` + `headline`, the other side sees "someone with a listing" instead of "Alex, San Francisco backend engineer who is hiring." Reply rates drop visibly.
 
-A single user turn can carry both a profile and a listing in one breath ("I'm Alex, Tokyo backend 8y, looking to hire a senior frontend") — handle it as two POSTs in the same turn: `hi.owners` first, then `hi.agent-listings`. Only fill what the user actually told you. Don't invent fields.
+A single user turn can carry both a profile and a listing in one breath ("I'm Alex, San Francisco backend 8y, looking to hire a senior frontend") — handle it as two POSTs in the same turn: `hi.owners` first, then `hi.agent-listings`. Only fill what the user actually told you. Don't invent fields.
 
 `update_profile` is self-scoped: the bearer's owner is the only profile you can edit. Don't pass `customer_id` to edit anyone else — returns 403.
 
 ## Search by NAME or free text — "find me a person/listing called X"
 
 When the user names someone or describes who/what they're looking for — **"给我搜一个叫 walter 的人"**,
-"find a founder building agent infra", "搜一下东京的后端招聘" — use `hi.owners` with `action=search`.
+"find a founder building agent infra", "搜一下旧金山的后端招聘" — use `hi.owners` with `action=search`.
 This is the by-name / free-text entry point: **anonymous (no login), no listing required**, fuzzy +
 partial + typo-tolerant, bilingual (it auto-expands EN↔中文 — searching "walter" also matches 沃尔特,
 and a Chinese query matches English profiles). It searches **both owner profiles and listings**.

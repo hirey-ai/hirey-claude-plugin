@@ -124,7 +124,7 @@ Call shape:
 curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.agent-listings/call" \
   -H "authorization: Bearer $HI_TOKEN" \
   -H 'content-type: application/json' \
-  --data '{"action":"upsert","text":"need 5 senior Go engineers in Tokyo","status":"published"}'
+  --data '{"action":"upsert","text":"need 5 senior Go engineers in San Francisco","status":"published"}'
 ```
 
 Returns either `{ ok: true, data: {...} }` or `{ error: "...", capability_id, tool_name }`.

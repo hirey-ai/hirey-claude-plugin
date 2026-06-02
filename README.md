@@ -14,7 +14,7 @@ The script drops three SKILL.md files into `~/.claude/skills/` and bootstraps an
 
 After it finishes, just talk to Claude:
 
-> *"find me 10 backend engineers in Tokyo with JLPT N2+"*
+> *"find me 10 backend engineers in San Francisco"*
 > *"post a listing for a cofounder in fintech, equity-only"*
 > *"reach out to the top three from yesterday's matches"*
 > *"schedule a 30-min Zoom with Alex next Wednesday"*

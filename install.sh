@@ -215,9 +215,9 @@ echo "  Skills installed at: $SKILLS_DIR/hi-{onboard,use,events}/"
 echo "  Credentials at:      $CREDS_FILE (mode 600)"
 echo
 echo "  Now ask Claude things like:"
-echo "    \"find me 5 backend engineers in Tokyo\""
-echo "    \"post a listing for a fintech cofounder\""
-echo "    \"any replies to yesterday's pairings?\""
+echo "    \"find me a founder in San Francisco\""
+echo "    \"post a listing for a fintech cofounder in SF\""
+echo "    \"any replies from yesterday's SF pairings?\""
 echo
 printf "  ${DIM}Skills auto-load via live change detection — no restart needed.${NC}\n"
 echo

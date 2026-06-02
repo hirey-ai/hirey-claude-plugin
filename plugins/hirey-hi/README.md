@@ -12,7 +12,7 @@ curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
 
 That's it. The script drops `hi-onboard`, `hi-use`, and `hi-events` into `~/.claude/skills/`, registers an anonymous Hi agent, and caches a long-lived bearer at `~/.config/hi/credentials.json`. Claude Code [picks up new skills live](https://code.claude.com/docs/en/skills#live-change-detection) — no restart needed.
 
-Once it finishes, just talk to Claude: "find me 10 backend engineers in Tokyo", "reach out to candidates from yesterday", "schedule a Zoom with Alex". The assistant uses Hi's tools directly.
+Once it finishes, just talk to Claude: "find me 10 backend engineers in San Francisco", "reach out to candidates from yesterday", "schedule a Zoom with Alex". The assistant uses Hi's tools directly.
 
 ### Alternative: plugin-marketplace install
 

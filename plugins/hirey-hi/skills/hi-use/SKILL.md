@@ -90,6 +90,17 @@ While the user hasn't finished it returns `status:"pending"` — keep polling, *
 
 The `google-link` `poll` response is identical to `phone-binding`/`email-binding` `verify` (plus a `status` field), so the continuity guidance below applies to all three. Offer Google first ("I can sign you in with Google — want me to?"); only fall back to phone/email if the user asks. New to Hi → binding creates the agent + a fresh workspace; returning (any anchor, used before) → the **same** Google account / phone / email rejoins the existing workspace, and the verified response carries `joined_existing_workspace` + `workspace_agents` — say it out loud and list their devices. Because every write requires a bind, offer Google sign-in early rather than after the user has created data.
 
+## Binding / connecting your identity to Hi (proactive)
+
+When the user wants to **bind / connect / add / save** their **email, phone, or Google account to Hi** — to keep their identity, recover their workspace across devices/reinstalls, or unlock writes — use **Hi's OWN capabilities** (the call shapes are in "Binding the owner identity" above; this is just the routing):
+
+- **Email → default `hi.google-link`** (one-click Sign in with Google — `start` → give the user the `verification_url` → `poll`). If they'd rather not use Google, **`hi.email-binding`** (`bind` → `verify` with the emailed code).
+- **Phone → `hi.phone-binding`** (`bind` → `verify` with the SMS code).
+
+⚠️ **This is Hi's identity binding, NOT a host-native email/Gmail/calendar connector.** Never tell the user to reauthorize or reconnect a host app (e.g. a Claude/OpenClaw "Gmail connector") for this — that's a different thing and won't bind them to Hi. If a host shows a "reauthenticate this app" message for some Gmail/email connector, that is NOT how you bind email to Hi; call `hi.google-link` / `hi.email-binding` instead.
+
+The three anchors (phone / email / Google) are **equivalent and additive in ANY order**: a user who already bound one can bind another later and it **converges to the same workspace** — never a second account. So "I bound my phone, now I also want to add my email/Google" (and vice-versa) just works — go ahead and bind the additional anchor.
+
 ## Device identity & continuity (name your devices · move identity across machines)
 
 Hi identity = the install-time credential in `~/.config/hi/credentials.json`; binding the owner identity (Google by default — see above — or phone/email) anchors it to a durable workspace. Three things keep multi-device life sane:

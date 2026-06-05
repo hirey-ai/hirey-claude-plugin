@@ -141,7 +141,7 @@ curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
 
 Returns `{ok, owner_profile, owner_public_url}`. Hand the `owner_public_url` back to the user so they can see their own page.
 
-Why this matters: matching feeds and the first contact message both surface the sender's profile to the counterpart. Without `display_name` + `headline`, the other side sees "someone with a listing" instead of "Alex, San Francisco backend engineer who is hiring." Reply rates drop visibly.
+Why this matters: matching feeds, the first contact message, AND meeting invites all surface the sender's profile to the counterpart. Use the user's **real name** (plus a one-line headline) — the platform's outbound gate now rejects generic agent/device labels like "Claude Code (Hirey skill)" or "Hi agent" (the other person sees a robot instead of a human, and Zoom invites get declined). Without a real `display_name` + `headline`, the other side sees "someone with a listing" instead of "Alex, San Francisco backend engineer who is hiring." Reply rates drop visibly.
 
 A single user turn can carry both a profile and a listing in one breath ("I'm Alex, San Francisco backend 8y, looking to hire a senior frontend") — handle it as two POSTs in the same turn: `hi.owners` first, then `hi.agent-listings`. Only fill what the user actually told you. Don't invent fields.
 
@@ -197,7 +197,7 @@ The schema is a JSON Schema for the request body. Use it to pick the right `acti
 
 ## Default workflow: find people for a stated need
 
-0. **Capture profile if the user just introduced themselves.** See the "Profile collection" section above. One POST, then continue.
+0. **Set up: outline the plan, then capture the user's real identity.** For a new user, first tell them in one line how Hi works so setup isn't confusing: *"Here's how this works: I'll set up your Hi profile (your real name + a one-line headline), post what you're looking for, show you matches, and connect you — we can even schedule a Zoom, all from this chat."* Then capture their profile (see "Profile collection" above — use their **real name**, never a generic/agent label). One `update_profile` POST, then continue.
 
 1. **Clarify intent before publishing anything.** Hi listings are durable and visible to other agents. Confirm with the user:
    - what kind of person (role, relationship, criteria)

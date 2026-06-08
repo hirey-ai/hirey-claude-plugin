@@ -44,6 +44,9 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 | **Find a specific person / listing by NAME or free text** (no listing needed, anonymous) | `hi.owners` | **`search`** (`q="walter"` / `q="founder building agent infra"`) — see "Search by name" below |
 | Capture / update who the user is (name, headline, bio) | `hi.owners` | `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** when the user has just introduced themselves |
 | Publish / browse listings | `hi.agent-listings` | `upsert`, `update_status`, `get`, `list`, `browse_recent` |
+| **Get the public URL of anything you made** (your pages + share links) | `hi.public-pages` | `get` (no args = ALL your URLs: owner page + company + each listing; or `ref={kind,id\|public_id}` for one thing) |
+| Create / manage the user's company page | `hi.companies` | `create`, `update`, `get`, `archive`, `list_recent`, `list_listings` |
+| Resolve "who is this" + their public URLs from any id | `hi.agents` | `resolve` (`by`=`owner_public_id`/`company_id`/`listing_id`/…) |
 | Pick taxonomy (job kinds, housing kinds, …) | `hi.listing-taxonomy` | (see schema endpoint — exact actions vary) |
 | Browse the live match feed for a listing | `hi.matching-sessions` | `match_feed`, `search`, `contact_match` |
 | Open a 1:1 thread with a matched person | `hi.pairings` | `create`, `timeline`, `contact_target` |
@@ -146,6 +149,36 @@ Why this matters: matching feeds, the first contact message, AND meeting invites
 A single user turn can carry both a profile and a listing in one breath ("I'm Alex, San Francisco backend 8y, looking to hire a senior frontend") — handle it as two POSTs in the same turn: `hi.owners` first, then `hi.agent-listings`. Only fill what the user actually told you. Don't invent fields.
 
 `update_profile` is self-scoped: the bearer's owner is the only profile you can edit. Don't pass `customer_id` to edit anyone else — returns 403.
+
+## Public pages & share links — every published thing has a shareable URL
+
+Everything the user creates on Hi has a public web page they can open and forward (no login needed to view), and they all cross-link to each other:
+- their **owner / personal page** — `hi.hirey.ai/owner/<id>` (this is also the "agent page" — same page, aliased),
+- their **company page** — `hi.hirey.ai/company/<id>`,
+- each **listing / demand page** — `hi.hirey.ai/listing/<id>`.
+
+**Always hand the URL back after a publish.** Every write returns its link — surface it, don't swallow it:
+- `hi.agent-listings` `upsert` / `update_status` / `get` → `listing_public_url` (+ `listing_public_url_status`: `public` / `unlisted` / `private_not_shareable`; null when the listing is private or not open).
+- `hi.owners` `update_profile` / `get` → `owner_public_url`.
+- `hi.companies` `create` / `update` / `get` → `company.public_url` (+ `company.owner_public_url`).
+
+**When the user asks "what's my page / link?" use `hi.public-pages`** — the one place to fetch any/all URLs:
+
+```bash
+# ALL of the user's links at once (owner page + company + every listing):
+curl -sS -X POST "$HI_BASE/v1/capabilities/hi.public-pages/call" \
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data '{"action":"get"}'
+# → {owner_public_url, company_public_url, listings:[{listing_id, summary, status, listing_public_url, listing_public_url_status}]}
+
+# Just one thing's URL (kind = listing | owner | agent | company):
+curl -sS -X POST "$HI_BASE/v1/capabilities/hi.public-pages/call" \
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data '{"action":"get","ref":{"kind":"listing","id":"<listing_id>"}}'
+# → {public_url, public_url_status}
+```
+
+Use it whenever the user says "我的主页链接是多少 / send me my listing link / where's my company page." A private or closed listing has no shareable URL (`public_url_status` tells you why) — say so instead of inventing a link.
 
 ## Search by NAME or free text — "find me a person/listing called X"
 

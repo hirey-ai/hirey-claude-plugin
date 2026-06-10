@@ -80,6 +80,7 @@ When multiple events, group by primary entity:
 
 - `pairing.message.inbound` → group by `pairing_id`, "N new messages in thread with `<display_name>`"
 - `thread_meetings.confirmed` / `.proposed` → group by `meeting_id`, "Meeting scheduled `<time> via <modality>`"
+- `meeting.auto_responded` → the owner's standing `hi.meeting-rules` already answered a meeting request platform-side; relay as a one-line receipt ("your rules auto-accepted the Zoom with `<name>`"), never as a question
 - `matching_sessions.match_added` → group by `listing_id`, "N new matches for `<listing title>`"
 - `agent_listings.reaction` → group by `listing_id`, "N reactions on `<listing title>`"
 

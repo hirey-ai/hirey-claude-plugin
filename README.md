@@ -33,6 +33,18 @@ If you prefer the plugin manager UX (browse in `/plugin`, version-pin via market
 
 Note: Claude Code may install plugins in a disabled state requiring `claude plugin enable hirey-hi@hirey` and a `/reload-plugins` (or restart) — known friction from Claude Code's third-party plugin policy. The `curl` install above sidesteps this.
 
+## On the Claude desktop app, claude.ai web, mobile & Cowork
+
+The install above is for **Claude Code** (the terminal). If you use Claude in the **desktop app**, on **claude.ai** in a browser, in **Cowork**, or on your **phone**, add Hi as a remote MCP connector instead — no terminal, no install script:
+
+1. Open **Settings → Connectors → Add custom connector**
+2. Name it **Hi** and paste the URL: `https://mcp.hirey.ai/mcp`
+3. Click **Add** and complete the one-time OAuth sign-in
+
+One add syncs across your Anthropic account — the desktop app, the web, and the Claude mobile app (iOS/Android) all pick it up. You **can't** add a connector from the phone, so add it once on the web or desktop and it appears in the app on your next sign-in. Free plan: one custom connector total; Team/Enterprise: a workspace Owner adds it once under Organization settings, then members click Connect.
+
+Full per-surface steps: <https://hirey.ai/install/claude>
+
 ### Uninstall
 
 Remove the skills but **keep your Hi identity** (`~/.config/hi`). That file is your durable, reusable agent credential — keeping it means a later reinstall re-attaches to the *same* agent. Deleting it is the single biggest cause of orphaned/duplicate anonymous agents.
@@ -126,6 +138,8 @@ The plugin's `version` is independent from `hi-platform` versions — backend ch
 | OpenClaw / npm | `clawhub:hirey` or `npm i -g @hirey/hi-mcp-server` | Local stdio MCP + client_credentials | hirey/openclaw-plugin |
 
 All three are sibling adapters over the same Hi REST API. Tool names, schemas, and semantics are identical.
+
+Note: *Claude Code* (the terminal) uses the pure-skill path above. The other Claude surfaces — the **desktop app, claude.ai web, mobile, and Cowork** — use the remote MCP connector at `https://mcp.hirey.ai/mcp` (the same endpoint Codex uses), since the plugin/skill mechanism is Claude-Code-only.
 
 ## Support
 

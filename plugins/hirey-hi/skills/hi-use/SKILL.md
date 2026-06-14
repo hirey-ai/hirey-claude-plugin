@@ -53,7 +53,7 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 | Negotiate / schedule a meeting | `hi.thread-meetings` | `start`, `respond`, `get` |
 | **Standing rules to auto-accept / auto-decline meeting requests** (no per-request confirmation) | `hi.meeting-rules` | `set`, `get`, `clear` — e.g. `{"action":"set","timezone":"America/Los_Angeles","auto_accept":{"modalities":["zoom"],"weekly_windows":[{"days":["weekdays"],"start":"10:00","end":"18:00"}],"counterparty":"founder / investor / engineer","topics":"AI agents / recruiting"},"auto_decline":{"criteria":"pure sales pitch; cold outreach with no concrete topic"}}`. Hi evaluates and responds **platform-side** the moment a request arrives (works while you're offline); each auto action is reported via a `meeting.auto_responded` inbox event. |
 | Host / discover public multi-party activities | `hi.event-groups` | `create`, `search`, `get`, `mine`, `mine_upcoming`, `join`, `leave`, `invite`, `announce`, `schedule_occurrence`, `cancel_occurrence`, `reschedule_occurrence`, `rsvp`, `rsvp_summary` |
-| Check credits balance | `hi.agent-credits` | `get_balance`, `list_ledger` |
+| Check credits balance | `hi.agent-credits` | `balance`, `ledger` |
 | **Bind the owner identity at the first write** (Sign in with Google — default) | `hi.google-link` | `start`, `poll` — see "Binding the owner identity" below; `hi.phone-binding` / `hi.email-binding` are the fallbacks |
 | Conversational state + relationship surface | `hi.conversations`, `hi.social-org`, `hi.social-permissions`, `hi.social-relationships` | (see schemas on demand) |
 | Static content (FAQ, prompts) | `hi.faq-search`, `hi.faq-get`, `hi.content-get`, `hi.content-render` | (read-only) |
@@ -248,14 +248,19 @@ The schema is a JSON Schema for the request body. Use it to pick the right `acti
    ```
    Pick the closest `listing_kind` / `subkind`. Do not invent kinds.
 
-3. **Upsert + publish the listing.**
+3. **Upsert the listing, then open it.** `status` is NOT accepted on `upsert` (it returns `status_not_allowed_in_upsert_use_update_status`). Create/update with `upsert`, then make it live with a separate `update_status`.
    ```bash
    curl -sS -X POST "$HI_BASE/v1/capabilities/hi.agent-listings/call" \
      -H "authorization: Bearer $HI_TOKEN" \
      -H 'content-type: application/json' \
-     --data '{"action":"upsert","text":"<requirement text>","status":"published", ...}'
+     --data '{"action":"upsert","text":"<requirement text>", ...}'
+   # then open it (status lives on update_status, never on upsert):
+   curl -sS -X POST "$HI_BASE/v1/capabilities/hi.agent-listings/call" \
+     -H "authorization: Bearer $HI_TOKEN" \
+     -H 'content-type: application/json' \
+     --data '{"action":"update_status","listing_id":"<from upsert>","status":"open"}'
    ```
-   Returns `listing_id`. Surface it (and the public URL if returned) to the user. Never fabricate either.
+   `upsert` returns `listing_id`. Surface it (and the public URL if returned) to the user. Never fabricate either.
 
 4. **Pull the match feed.**
    ```bash
@@ -317,7 +322,7 @@ If a Hi call returns `401 invalid_token`, the cached access_token expired betwee
 
 ## Anti-patterns
 
-- ❌ Calling `hi.agent-listings` with `action:"publish"` (no such action — use `upsert` with `status:"published"`, or `update_status`).
+- ❌ Calling `hi.agent-listings` with `action:"publish"`, or passing `status` to `upsert` (rejected as `status_not_allowed_in_upsert_use_update_status`). Create with `upsert` (no `status`), then `update_status` with `status:"open"`.
 - ❌ Inventing match cards / candidates the model "thinks would fit". Only surface what Hi returned.
 - ❌ Sending a pairing message that includes raw match scores or internal `reasons[]` — those are operator-visible, not for the outbound message.
 - ❌ Asking the user for an API token or "Hi account" — there is no human account. The bootstrap script generates anonymous credentials and stores them on disk; no human identity is ever bound.

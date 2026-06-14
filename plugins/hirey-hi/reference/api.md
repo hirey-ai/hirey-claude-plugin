@@ -127,8 +127,10 @@ Call shape:
 curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.agent-listings/call" \
   -H "authorization: Bearer $HI_TOKEN" \
   -H 'content-type: application/json' \
-  --data '{"action":"upsert","text":"need 5 senior Go engineers in San Francisco","status":"published"}'
+  --data '{"action":"upsert","text":"need 5 senior Go engineers in San Francisco"}'
 ```
+
+`status` is not accepted on `upsert` (returns `status_not_allowed_in_upsert_use_update_status`). After upsert, open the listing separately: `{"action":"update_status","listing_id":"<from upsert>","status":"open"}`.
 
 Returns either `{ ok: true, data: {...} }` or `{ error: "...", capability_id, tool_name }`.
 

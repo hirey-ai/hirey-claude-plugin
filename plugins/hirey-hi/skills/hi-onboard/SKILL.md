@@ -11,7 +11,8 @@ Hi is Hirey's people-to-people platform. This plugin gives Claude direct REST ac
 - the user just enabled the `hirey-hi` plugin and is about to ask for any Hi workflow
 - the user types "set up hi", "install hi", "register hi"
 - you are about to call a Hi REST endpoint and `[ -f ~/.config/hi/credentials.json ]` returns false
-- the assistant just got a `401 invalid_token` or `agent_activation_required` from a Hi endpoint
+- the assistant just got a `401 invalid_token`, `token_expired`, or `agent_activation_required` from a Hi endpoint — step 2 refreshes the bearer from the cached `client_credentials`, then retry the call
+- the assistant got `auth_required_for_write` on a **write/bind** call AND `~/.config/hi/credentials.json` already exists — this is a stale bearer, not a missing owner: refresh here first and retry the SAME call; do NOT jump to binding (binding is itself a write and will loop on the same stale token)
 - the user explicitly says "re-register", "reset hi identity", "log in again"
 
 ## Do not use when

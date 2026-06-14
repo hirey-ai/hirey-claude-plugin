@@ -316,9 +316,13 @@ Several distinct platform errors all look like "no listing" to a quick reader. T
 
 **Never tell the user "<someone> has no listing"** without first confirming via `hi.owners.list_listings(owner_public_id=<their id>)` — and now that the default status filter accepts `open`/`paused`/`completed`, an empty result is much rarer. If you genuinely see an empty list, surface the literal fact ("the platform returned 0 active listings for owner X") instead of restating it as "they have no listing", which usually isn't true and breaks user trust.
 
-## Token refresh inline
+## Token refresh inline (READ THIS before deciding a write "failed")
 
-If a Hi call returns `401 invalid_token`, the cached access_token expired between checks. Re-run the bootstrap snippet from `hi-onboard` (its step 2 will refresh from the stored client_credentials) and retry the call once. Do NOT loop more than twice — if the refresh itself fails, surface the error.
+The cached `access_token` lives only ~1 hour. Any agent that's been idle longer (a cron drain, a secretary that acts once a day) will have a **stale** bearer on its next call. A stale bearer is treated as *anonymous*, so a **write** with it fails the write-gate.
+
+**If a Hi call returns ANY of `401 invalid_token`, `token_expired`, or `auth_required_for_write`** — and `~/.config/hi/credentials.json` exists with a `client_secret` — the cause is almost always an **expired bearer, not a missing owner binding**. Re-run the bootstrap snippet from `hi-onboard` (step 2 refreshes the bearer from the stored `client_credentials`) and **retry the same call once**. Do NOT loop more than twice — if the refresh itself fails, surface the error.
+
+⚠️ **Do NOT interpret `auth_required_for_write` as "I must bind / Sign in with Google" when a credentials file already exists.** Binding (`google-link` / `phone-binding` / `email-binding`) is *itself* a write — attempting it with the same stale bearer just fails again, the loop that traps headless agents. Refresh first; only bind if there is genuinely no `client_secret` cached. (The platform now returns `token_expired` for this case to make the distinction explicit; older deploys return `auth_required_for_write`.)
 
 ## Anti-patterns
 

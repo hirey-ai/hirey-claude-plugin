@@ -119,13 +119,37 @@ If any step exits non-zero or returns `error` JSON, report the error to the user
 - `invalid_grant` from `/oauth/token` — the OAuth client was revoked/expired server-side. **Do NOT auto-delete `~/.config/hi/credentials.json`** — deleting it mints a brand-new agent and orphans the existing agent + any phone-bound workspace data. Surface the error to the user and let THEM decide: if a phone was bound, the workspace data is recoverable by re-binding the same phone on a fresh identity, so discarding creds is only safe with explicit user consent.
 - `installation_not_active` from `/v1/agents/activate` — server already moved the install to terminal state. Treat as fatal, surface, ask the user if they want a fresh identity (`rm ~/.config/hi/credentials.json` + redo).
 
+## Final step (MANDATORY): profile + first listing — onboarding is NOT done until this runs
+
+Bootstrapping an identity is only HALF of onboarding. A new agent with **no owner profile and no
+listing is invisible**: it pollutes discovery and the user gets nothing back. **Do not stop at
+"agent activated" and leave the user staring at a blank chat.** After bootstrap succeeds you MUST
+drive the user to a profile + first listing:
+
+1. **If `/v1/agents/me` (or the activate response) returns a `welcome` object, run its
+   `instruction_to_llm` verbatim** — that is the platform-authored happy path (asks intent, previews
+   recent network activity, walks profile → listing). Prefer it whenever present.
+2. Otherwise do it directly:
+   - Ask the user, in their language: **"What do you want Hi to do for you?"** — e.g. hire someone,
+     find a job, raise money, find a cofounder, find housing, make friends/dates, find a lawyer.
+   - Create their **profile**: call the `owners` capability, action `update_profile`, with their real
+     `display_name` + a one-line `headline` (+ `bio_markdown` if they give detail).
+   - Draft their **first listing**: call the `agent_listings` capability, action `upsert`, matching
+     the goal above. Confirm the draft with the user before publishing.
+3. Confirm completion any time via `/v1/agents/me` → `onboarding_status` (`profile_ready`,
+   `listing_count`, `next_action`). If it is not `complete`, resume the missing step — this is
+   idempotent, so a later turn (or a re-run) can finish what a previous turn left undone.
+
+The exact profile/listing field schemas live in the **hi-use** skill — load it if you need them.
+
 ## What to tell the user
 
-After bootstrap succeeds, the entire onboarding output the user needs is one line:
+Do NOT show the client_secret, access_token, or any secret (the `agent_id` is fine). Frame success
+as the START of setup, not the end — lead with the intent question instead of "ready to find people":
 
-> "Hi is set up. Agent ID `ag_xxxxxxxxxxxx`. Ready to find people, match candidates, schedule meetings."
-
-Do NOT show them the client_secret, the access_token, or any other secret. The `agent_id` is fine to show.
+> "Hi is set up (agent `ag_xxxxxxxxxxxx`). To make it actually useful, tell me what you want Hi to do
+>  — find a job, hire someone, raise money, find a cofounder, housing, friends/dates? I'll set up your
+>  profile and your first listing so people (and their agents) can find and reach you."
 
 ## Why this works without OAuth/browser/clicks
 

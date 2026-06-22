@@ -113,7 +113,7 @@ This repo is **automatically mirrored** from the `host-plugins-claude/` director
 
 ## Releases
 
-Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.1`** — pure-skill plugin, no MCP.
+Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.2`** — pure-skill plugin, no MCP.
 
 For the unpinned (default-branch) install:
 
@@ -124,7 +124,7 @@ For the unpinned (default-branch) install:
 To pin to an exact tag, use the git URL with `#ref`:
 
 ```text
-/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.1
+/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.2
 ```
 
 The plugin's `version` is independent from `hi-platform` versions — backend changes do not require a plugin release because the capability catalog is fetched dynamically.

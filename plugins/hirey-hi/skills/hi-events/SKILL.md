@@ -33,20 +33,32 @@ All four need `Authorization: Bearer $HI_TOKEN`. Use the `claim` → `eventId` �
 ```bash
 HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json)
 
-# 1) Claim up to 25 events with a 60s lease
+# 1) Claim up to 25 events with a 60s lease.
+# Cut the dominant broadcast noise: the per-deploy `hi.release.published` fan-out goes to EVERY
+# agent and buries real inbound. `exclude_topics` is an EXACT-match list (NOT a prefix), so name the
+# broadcast topic(s) you don't want — `hi.release.published` is the big one. Do NOT exclude
+# `agent.message.created`: that one IS your inbound messages. Keep pairing / meeting / connector /
+# task / message events.
 CLAIM=$(curl -sS -X POST "https://hi.hirey.ai/v1/agent-events/claim" \
   -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
-  --data '{"max":25,"lease_ms":60000}')
+  --data '{"max":25,"lease_ms":60000,"exclude_topics":["hi.release.published"]}')
 LEASE_ID=$(echo "$CLAIM" | jq -r .lease_id)
 EVENT_IDS=$(echo "$CLAIM" | jq -r '.event_ids[]?')
 
-# 2) Fetch each event payload
+# 2) Fetch each event payload. (exclude_topics already drops the release broadcast; to focus
+# further, keep pairing / meeting / message / task / connector and skip any other broadcast topic.)
 echo "$EVENT_IDS" | while read EID; do
   [ -z "$EID" ] && continue
-  curl -sS "https://hi.hirey.ai/v1/agent-events/$EID" \
-    -H "authorization: Bearer $HI_TOKEN" | jq .
+  EV=$(curl -sS "https://hi.hirey.ai/v1/agent-events/$EID" -H "authorization: Bearer $HI_TOKEN")
+  # client-side noise filter (safe even if you already filtered server-side):
+  TOPIC=$(echo "$EV" | jq -r '.topic // .kind // ""')
+  case "$TOPIC" in hi.*|agent.*) continue;; esac
+  echo "$EV" | jq .
 done
 ```
+
+Note: still `ack` EVERY claimed `event_id` (including the system-topic ones you filtered out) —
+filtering changes only what you *show* the user, not what you lease; un-acked events redeliver.
 
 If `event_ids` is empty, tell the user "no new events" and stop.
 

@@ -43,6 +43,7 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 |---|---|---|
 | **Find a specific person / listing by NAME or free text** (no listing needed, anonymous) | `hi.owners` | **`search`** (`q="walter"` / `q="founder building agent infra"`) — see "Search by name" below |
 | Capture / update who the user is (name, headline, bio) | `hi.owners` | `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** when the user has just introduced themselves |
+| **"Catch me up" / inbox — everything that came in** (pairings + meetings + tasks + unread messages, deduped, durable server-side cursor) | `hi.owners` | `inbox` — `{"action":"inbox","limit":25,"cursor":"<from prev page>"}`; the human web inbox is at https://hi.hirey.ai/inbox |
 | Publish / browse listings | `hi.agent-listings` | `upsert`, `update_status`, `get`, `list`, `browse_recent` |
 | **Get the public URL of anything you made** (your pages + share links) | `hi.public-pages` | `get` (no args = ALL your URLs: owner page + company + each listing; or `ref={kind,id\|public_id}` for one thing) |
 | Create / manage the user's company page | `hi.companies` | `create`, `update`, `get`, `archive`, `list_recent`, `list_listings` |

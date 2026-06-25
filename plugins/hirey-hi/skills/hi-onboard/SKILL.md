@@ -119,16 +119,6 @@ If any step exits non-zero or returns `error` JSON, report the error to the user
 - `invalid_grant` from `/oauth/token` — the OAuth client was revoked/expired server-side. **Do NOT auto-delete `~/.config/hi/credentials.json`** — deleting it mints a brand-new agent and orphans the existing agent + any phone-bound workspace data. Surface the error to the user and let THEM decide: if a phone was bound, the workspace data is recoverable by re-binding the same phone on a fresh identity, so discarding creds is only safe with explicit user consent.
 - `installation_not_active` from `/v1/agents/activate` — server already moved the install to terminal state. Treat as fatal, surface, ask the user if they want a fresh identity (`rm ~/.config/hi/credentials.json` + redo).
 
-## Headless / server-side callers: bind an owner immediately (no browser)
-
-A browserless caller (cron job, server-side agent, CI) does NOT need a full browser to bind an owner.
-Right after registering the anonymous agent above, you MAY immediately call one of the bind tools —
-`hi.phone-binding`, `hi.email-binding`, or `hi.google-link` — to attach a real owner identity. These
-three bind tools are intentionally **EXEMPT from the write-gate**, so binding is never circular: you
-can bind before the workspace has any owner. A human just types the 6-digit OTP (phone/email) or
-opens the Google link once; the agent drives the rest of the flow (`bind`/`start` → `verify`/`poll`)
-over the API. See the bind call shapes in the **hi-use** skill ("Binding the owner identity").
-
 ## Final step (MANDATORY): profile + first listing — onboarding is NOT done until this runs
 
 Bootstrapping an identity is only HALF of onboarding. A new agent with **no owner profile and no

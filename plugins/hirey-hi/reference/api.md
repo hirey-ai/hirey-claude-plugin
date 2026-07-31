@@ -1,6 +1,6 @@
 # Hirey Hi — REST API reference
 
-This reference is loaded on demand by the `hi-onboard`, `hi-use`, and `hi-events` skills. It documents every endpoint the assistant calls and the lifecycle of the cached credentials.
+This reference is loaded on demand by the `hi-onboard`, `hi-use`, `hi-events`, and `hi-repair` skills. It documents every endpoint the assistant calls and the lifecycle of the cached credentials.
 
 All endpoints are under `https://hi.hirey.ai` unless otherwise noted.
 
@@ -186,4 +186,4 @@ If you ever need to verify the platform is reachable / which endpoints exist, hi
 
 The Hi backend treats every installation as an anonymous agent — there is no human user to authenticate. OAuth's role (proving you're the right human) doesn't apply. We use OAuth's `client_credentials` grant purely for machine-to-machine token issuance, which is functionally equivalent to a long-lived API key with rotation hooks. The plugin is pure markdown + Bash because (a) Hi already exposes everything as REST, (b) Claude Code's MCP-over-HTTP auto-trigger is broken upstream ([anthropics/claude-code#36307](https://github.com/anthropics/claude-code/issues/36307)), and (c) MCP added zero value for a remote-only, REST-natural surface.
 
-Codex CLI and OpenClaw still use the MCP path (`hi-mcp-server` is a separate service at `https://hi.hirey.ai/mcp`). That path's identity model (per-install DCR + PKCE) and this skill's model (per-install client_credentials) both end up minting one anonymous Hi subject per install — same end state, different wire.
+Codex CLI and OpenClaw still use the MCP path (`hi-mcp-server` is a separate service at `https://mcp.hirey.ai/mcp`, legacy alias `https://hi.hirey.ai/mcp`). That path's identity model (a stable `hi_ak_…` API key by default, per-install DCR + PKCE browser-OAuth as fallback) and this skill's model (per-install client_credentials) both end up minting one anonymous Hi subject per install — same end state, different wire.

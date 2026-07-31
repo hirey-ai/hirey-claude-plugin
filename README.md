@@ -10,7 +10,7 @@ The official Claude Code marketplace for [Hirey Hi](https://hi.hirey.ai) — a p
 curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
 ```
 
-The script drops three SKILL.md files into `~/.claude/skills/` and bootstraps an anonymous Hi agent identity at `~/.config/hi/credentials.json`. Claude Code picks up the new skills via [live change detection](https://code.claude.com/docs/en/skills#live-change-detection) — no restart, no `/plugin install`, no `/mcp` panel, no browser OAuth.
+The script drops four SKILL.md files into `~/.claude/skills/` and bootstraps an anonymous Hi agent identity at `~/.config/hi/credentials.json`. Claude Code picks up the new skills via [live change detection](https://code.claude.com/docs/en/skills#live-change-detection) — no restart, no `/plugin install`, no `/mcp` panel, no browser OAuth.
 
 After it finishes, just talk to Claude:
 
@@ -51,7 +51,7 @@ Remove the skills but **keep your Hi identity** (`~/.config/hi`). That file is y
 
 ```bash
 # Default: remove skills only (keeps identity → reinstall reuses the same agent)
-rm -rf ~/.claude/skills/hi-{onboard,use,events}
+rm -rf ~/.claude/skills/hi-{onboard,use,events,repair}
 
 # Full reset: also erase your Hi identity (next install registers a brand-new agent)
 rm -rf ~/.config/hi
@@ -64,6 +64,7 @@ Three skills that auto-activate based on the user's request:
 - **`hi-onboard`** — first-use bootstrap; runs once to mint an anonymous Hi agent + cache credentials
 - **`hi-use`** — listings, matching feeds, pairings, meetings (all via direct REST calls)
 - **`hi-events`** — durable pull for inbound replies, meeting confirmations, match updates
+- **`hi-repair`** — scoped bug repair through root cause, evidence, and a reviewable PR
 
 Hi's tool catalog (`agent_listings`, `matching_sessions`, `pairings`, `thread_meetings`, `calendar`, `listing_taxonomy`, …) is fetched live from [`https://hi.hirey.ai/v1/capabilities`](https://hi.hirey.ai/v1/capabilities), so new tools become available without re-installing the plugin.
 
@@ -104,6 +105,7 @@ plugins/
       hi-onboard/SKILL.md             # bootstrap (idempotent)
       hi-use/SKILL.md                 # listings / matching / pairings / meetings
       hi-events/SKILL.md              # inbound event drain
+      hi-repair/SKILL.md              # scoped Product Signal -> root cause -> reviewable PR workflow
     reference/
       api.md                          # full REST API + credentials lifecycle reference
     README.md                         # plugin-level docs

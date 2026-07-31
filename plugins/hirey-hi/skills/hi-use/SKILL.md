@@ -1,5 +1,5 @@
 ---
-description: Use Hirey Hi for people-to-people workflows — post listings, see matches, search candidates, start 1:1 pairings, schedule meetings. Use whenever the user asks to find, recruit, match, reach out to, pair with, or meet anyone (job candidate, tenant, friend, date, cofounder, investor, lawyer, etc.). Calls Hi's REST API directly via `curl` with a bearer token cached at `~/.config/hi/credentials.json` — no MCP, no browser OAuth, no `/mcp`. If the credentials file is missing or the token is expired, run the `hi-onboard` skill first (or its inline bootstrap snippet) before any Hi call.
+description: Use Hirey Hi for people-to-people workflows or an owner-private handoff to another device — post listings, see matches, start pairings, schedule meetings, or leave/read a pull-only note across the same owner's Mac/PC/other host. Calls Hi's REST API directly via `curl` with a bearer token cached at `~/.config/hi/credentials.json`. If credentials are missing or expired, run `hi-onboard` first.
 ---
 
 # Hi Use (REST workflows for people-finding)
@@ -25,6 +25,7 @@ Capabilities are loaded live from Hi's catalog (`GET https://hi.hirey.ai/v1/capa
   - "show me my listings"
   - "reach out to candidate N from the last batch"
   - "set up a Zoom / phone call with …"
+  - "send this to my PC" / "what did my Mac leave for me?"
 
 ## Helper: one-line bearer
 
@@ -44,7 +45,7 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 | **Find a specific person / listing by NAME or free text** (no listing needed, anonymous) | `hi.owners` | **`search`** (`q="walter"` / `q="founder building agent infra"`) — see "Search by name" below |
 | Capture / update who the user is (name, headline, bio) | `hi.owners` | `update_profile`, `get`, `list_listings`, `peers_feed` — **call this first** when the user has just introduced themselves |
 | Publish / browse listings | `hi.agent-listings` | `upsert`, `update_status`, `get`, `list`, `browse_recent` |
-| **Get the public URL of anything you made** (your pages + share links) | `hi.public-pages` | `get` (no args = ALL your URLs: owner page + company + each listing; or `ref={kind,id\|public_id}` for one thing) |
+| **Get shareable company/listing URLs** | `hi.public-pages` | `get` (person links require exact canonical `hirey.ai/p/<slug>` authority and must never be derived from an owner id) |
 | Create / manage the user's company page | `hi.companies` | `create`, `update`, `get`, `archive`, `list_recent`, `list_listings` |
 | Resolve "who is this" + their public URLs from any id | `hi.agents` | `resolve` (`by`=`owner_public_id`/`company_id`/`listing_id`/…) |
 | Pick taxonomy (job kinds, housing kinds, …) | `hi.listing-taxonomy` | (see schema endpoint — exact actions vary) |
@@ -57,6 +58,7 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 | **Bind the owner identity at the first write** (Sign in with Google — default) | `hi.google-link` | `start`, `poll` — see "Binding the owner identity" below; `hi.phone-binding` / `hi.email-binding` are the fallbacks |
 | Conversational state + relationship surface | `hi.conversations`, `hi.social-org`, `hi.social-permissions`, `hi.social-relationships` | (see schemas on demand) |
 | Static content (FAQ, prompts) | `hi.faq-search`, `hi.faq-get`, `hi.content-get`, `hi.content-render` | (read-only) |
+| Private note to/from another device in the same owner workspace | `hi.private-handoffs` | `send`, `inbox`, `mark_read`, `list_devices`; pull-only, no notification or auto-execution |
 
 If a capability you remember from this table is missing from the live catalog, **trust the catalog** — the table may lag.
 
@@ -143,7 +145,7 @@ curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
   --data '{"action":"update_profile","display_name":"Alex","headline":"San Francisco backend engineer (8y)","bio_markdown":"<2-3 short lines>","location_text":"San Francisco, USA"}'
 ```
 
-Returns `{ok, owner_profile, owner_public_url}`. Hand the `owner_public_url` back to the user so they can see their own page.
+Returns the saved owner profile plus machine-only identity routing. Never display an owner id or construct/share an owner-route URL. A public person link is valid only when an exact `https://hirey.ai/p/<slug>` authority is supplied; otherwise say the public page link is not ready.
 
 Why this matters: matching feeds, the first contact message, AND meeting invites all surface the sender's profile to the counterpart. Use the user's **real name** (plus a one-line headline) — the platform's outbound gate now rejects generic agent/device labels like "Claude Code (Hirey skill)" or "Hi agent" (the other person sees a robot instead of a human, and Zoom invites get declined). Without a real `display_name` + `headline`, the other side sees "someone with a listing" instead of "Alex, San Francisco backend engineer who is hiring." Reply rates drop visibly.
 
@@ -151,28 +153,25 @@ A single user turn can carry both a profile and a listing in one breath ("I'm Al
 
 `update_profile` is self-scoped: the bearer's owner is the only profile you can edit. Don't pass `customer_id` to edit anyone else — returns 403.
 
-## Public pages & share links — every published thing has a shareable URL
+## Public pages & share links
 
-Everything the user creates on Hi has a public web page they can open and forward (no login needed to view), and they all cross-link to each other:
-- their **owner / personal page** — `hi.hirey.ai/owner/<id>` (this is also the "agent page" — same page, aliased),
-- their **company page** — `hi.hirey.ai/company/<id>`,
-- each **listing / demand page** — `hi.hirey.ai/listing/<id>`.
+Company and open listing results may contain shareable URLs. A person profile is different: the only canonical public person link is an exact, verified `https://hirey.ai/p/<slug>`. Internal owner identity routes and ids are tool plumbing, not public person pages.
 
 **Always hand the URL back after a publish.** Every write returns its link — surface it, don't swallow it:
 - `hi.agent-listings` `upsert` / `update_status` / `get` → `listing_public_url` (+ `listing_public_url_status`: `public` / `unlisted` / `private_not_shareable`; null when the listing is private or not open).
-- `hi.owners` `update_profile` / `get` → `owner_public_url`.
-- `hi.companies` `create` / `update` / `get` → `company.public_url` (+ `company.owner_public_url`).
+- `hi.owners` `update_profile` / `get` → profile data and machine-only routing; no shareable person link unless an exact canonical `/p` authority is separately present.
+- `hi.companies` `create` / `update` / `get` → `company.public_url`.
 
 **When the user asks "what's my page / link?" use `hi.public-pages`** — the one place to fetch any/all URLs:
 
 ```bash
-# ALL of the user's links at once (owner page + company + every listing):
+# The user's shareable company + listing links:
 curl -sS -X POST "$HI_BASE/v1/capabilities/hi.public-pages/call" \
   -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
   --data '{"action":"get"}'
-# → {owner_public_url, company_public_url, listings:[{listing_id, summary, status, listing_public_url, listing_public_url_status}]}
+# → {company_public_url, listings:[{listing_id, summary, status, listing_public_url, listing_public_url_status}]}
 
-# Just one thing's URL (kind = listing | owner | agent | company):
+# Just one shareable company/listing URL:
 curl -sS -X POST "$HI_BASE/v1/capabilities/hi.public-pages/call" \
   -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
   --data '{"action":"get","ref":{"kind":"listing","id":"<listing_id>"}}'
@@ -197,11 +196,11 @@ curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
 ```
 
 Returns `{query, understanding, people[], listings[]}`. `people[]` = matching owner cards
-(display_name + headline + owner_public_url); `listings[]` = matching public listings (preview +
+(display_name + headline plus a machine-only routing id); `listings[]` = matching public listings (preview +
 publisher card). `understanding` shows how the query was expanded (intent + term groups) — for
 transparency, don't surface it to the user. Show the people + listings; to reach someone, call
-`hi.pairings` with `action=contact_owner`, `target_owner_public_id` (the public id in their
-`owner_public_url`) and `text` — it opens the thread directly, **no listing or match needed**.
+`hi.pairings` with `action=contact_owner`, `target_owner_public_id` (reuse the machine-only id
+returned by search) and `text` — it opens the thread directly, **no listing or match needed**.
 (Use the listing → matching → `contact_match` flow only when acting on a specific published listing.)
 
 Use `search` (not `matching_sessions.search`) for "find a specific person/thing by name or keywords."
@@ -227,9 +226,11 @@ curl -sS -X POST "$HI_BASE/v1/capabilities/hi.owners/call" \
   --data '{"action":"peers_feed","limit":10}'
 ```
 
-Returns `{items[], caller_profile_ready}`. `items[]` is owner profile cards (display_name + headline + location_text + avatar_url + owner_public_url + `suggested_because`). Surface 5–10 to the user verbatim — don't paraphrase. If `caller_profile_ready=false`, the user's own profile is too sparse; suggest a quick `update_profile` before proceeding.
+Returns `{items[], caller_profile_ready}`. `items[]` is owner profile cards (display_name + headline + location_text + avatar_url + a machine-only routing id + `suggested_because`). Surface only the human-readable fields; never show the routing id. If `caller_profile_ready=false`, the user's own profile is too sparse; suggest a quick `update_profile` before proceeding.
 
-**Reaching someone from discovery — use `contact_owner`, no listing needed.** `peers_feed` / `search` return each owner's `owner_public_url`, which carries their public id. To contact them, call `hi.pairings` with `action=contact_owner`, `target_owner_public_id=<that public id>` (or `target_owner_customer_id` / `target_agent_id`) and your `text`; Hi creates the pairing for you — you do **not** need a listing, a match, or `contact_match` first. (You must have your own owner profile set up — if you get `caller_owner_unresolved` / a profile-required error, run `update_profile` first.) Reserve the listing → matching → `contact_match` flow for when you're acting on a specific published listing/selection.
+**Reaching someone from discovery — use `contact_owner`, no listing needed.** Reuse the machine-only `owner_public_id` returned by `peers_feed` / `search` as `target_owner_public_id` (or use `target_owner_customer_id` / `target_agent_id`) with your `text`. Never display that id or derive a URL from it. Hi creates the pairing directly; reserve listing → matching → `contact_match` for a specific published listing/selection.
+
+**Show / resume conversations (one per person).** The same two people can have several pairings (one per listing/origin), so a plain `hi.pairings` `action=list` splits one person across many rows. When the user wants to see their chats or resume one, call `hi.pairings` `action=list` with `group_by=counterparty` — it merges them into **one conversation per person** (returns `conversations[]`). For the full continuous history with someone, call `hi.messages` `action=between` with `with_agent_id=<their counterpart_agent_id>` — it returns everything across all their pairings, not just one fragment. Never tell the user "no history with X" from a single empty pairing; group first, then read `between`.
 
 ## Fetch a capability's schema before calling it (when in doubt)
 
@@ -340,4 +341,4 @@ The cached `access_token` lives only ~1 hour. Any agent that's been idle longer 
 - ❌ Inventing match cards / candidates the model "thinks would fit". Only surface what Hi returned.
 - ❌ Sending a pairing message that includes raw match scores or internal `reasons[]` — those are operator-visible, not for the outbound message.
 - ❌ Asking the user for an API token or "Hi account" — there is no human account. The bootstrap script generates anonymous credentials and stores them on disk; no human identity is ever bound.
-- ❌ Hitting the old MCP endpoint `https://hi.hirey.ai/mcp`. This plugin is REST-only. The MCP endpoint exists for Codex / OpenClaw and uses a totally different (browser-OAuth) auth path.
+- ❌ Hitting the MCP endpoint `https://mcp.hirey.ai/mcp` (or its legacy alias `https://hi.hirey.ai/mcp`). This plugin is REST-only. The MCP endpoint is the sibling adapter for Codex / OpenClaw — same capability catalog, identical tool names/schemas, but a separate auth world: default is a stable `hi_ak_…` API key minted by its install script, with browser-OAuth as the fallback. Neither accepts this plugin's REST bearer.

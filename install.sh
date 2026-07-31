@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Hirey Hi installer for Claude Code
 #
-# Drops three SKILL.md files into ~/.claude/skills/ and bootstraps an
+# Drops four SKILL.md files into ~/.claude/skills/ and bootstraps an
 # anonymous Hi agent identity at ~/.config/hi/credentials.json. After this
 # runs, any Claude Code session can immediately use Hi via direct REST
 # calls — no plugin install, no `/mcp` panel, no browser OAuth.
@@ -87,7 +87,7 @@ step "Installing Hirey Hi skill (v${VERSION}) from ${SKILLS_REPO}@${SKILLS_REF}"
 
 # ─── 1. Drop skill markdown into ~/.claude/skills/ ───────────────────────
 mkdir -p "$SKILLS_DIR"
-for name in hi-onboard hi-use hi-events; do
+for name in hi-onboard hi-use hi-events hi-repair; do
   mkdir -p "$SKILLS_DIR/$name"
   curl -fsSL "$RAW_BASE/skills/$name/SKILL.md" -o "$SKILLS_DIR/$name/SKILL.md" \
     || fail "Failed to download $name SKILL.md"
@@ -99,7 +99,7 @@ curl -fsSL "$RAW_BASE/reference/api.md" -o "$SKILLS_DIR/hi-onboard/reference/api
   || printf "${DIM}  (skipped optional reference doc — not fatal)${NC}\n"
 
 ok "Skills installed at $SKILLS_DIR"
-printf "    ${DIM}- hi-onboard, hi-use, hi-events${NC}\n"
+printf "    ${DIM}- hi-onboard, hi-use, hi-events, hi-repair${NC}\n"
 
 # ─── 2. Bootstrap anonymous identity if not already set up ───────────────
 step "Bootstrapping anonymous Hi identity"
@@ -222,5 +222,5 @@ echo
 printf "  ${DIM}Skills auto-load via live change detection — no restart needed.${NC}\n"
 echo
 printf "  ${DIM}To uninstall the skills (KEEPS your Hi identity — a reinstall reuses the SAME agent):${NC}\n"
-printf "      rm -rf $SKILLS_DIR/hi-{onboard,use,events}\n"
+printf "      rm -rf $SKILLS_DIR/hi-{onboard,use,events,repair}\n"
 printf "  ${DIM}To ALSO erase your Hi identity (next install will register a brand-new agent): rm -rf $CREDS_DIR${NC}\n"

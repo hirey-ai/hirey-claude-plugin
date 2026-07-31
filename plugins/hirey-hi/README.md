@@ -10,7 +10,7 @@ Claude Code plugin that gives Claude direct access to the Hi people-to-people pl
 curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
 ```
 
-That's it. The script drops `hi-onboard`, `hi-use`, and `hi-events` into `~/.claude/skills/`, registers an anonymous Hi agent, and caches a long-lived bearer at `~/.config/hi/credentials.json`. Claude Code [picks up new skills live](https://code.claude.com/docs/en/skills#live-change-detection) — no restart needed.
+That's it. The script drops `hi-onboard`, `hi-use`, `hi-events`, and `hi-repair` into `~/.claude/skills/`, registers an anonymous Hi agent, and caches a long-lived bearer at `~/.config/hi/credentials.json`. Claude Code [picks up new skills live](https://code.claude.com/docs/en/skills#live-change-detection) — no restart needed.
 
 Once it finishes, just talk to Claude: "find me 10 backend engineers in San Francisco", "reach out to candidates from yesterday", "schedule a Zoom with Alex". The assistant uses Hi's tools directly.
 
@@ -73,6 +73,7 @@ plugins/hirey-hi/
     hi-onboard/SKILL.md          # one-time bootstrap (idempotent)
     hi-use/SKILL.md              # listings / matching / pairings / meetings
     hi-events/SKILL.md           # inbound event drain
+    hi-repair/SKILL.md           # scoped Product Signal -> root cause -> reviewable PR workflow
   reference/
     api.md                       # full REST API + credentials lifecycle reference
   README.md                      # this file
@@ -82,7 +83,7 @@ plugins/hirey-hi/
 
 ## Backing service
 
-`https://hi.hirey.ai` is hi-platform (Express + REST). The previously-required `hi-mcp-server` (Codex / OpenClaw path) is still there at `https://hi.hirey.ai/mcp`, but this plugin doesn't touch it — every call goes straight to `/v1/*` REST endpoints. Tools are loaded dynamically from `GET /v1/capabilities` so the tool inventory stays in sync without re-releasing the plugin.
+`https://hi.hirey.ai` is hi-platform (Express + REST). The `hi-mcp-server` (Codex / OpenClaw path) is still there at `https://mcp.hirey.ai/mcp` (legacy alias `https://hi.hirey.ai/mcp`), but this plugin doesn't touch it — every call goes straight to `/v1/*` REST endpoints. Tools are loaded dynamically from `GET /v1/capabilities` so the tool inventory stays in sync without re-releasing the plugin.
 
 ## Local development / staging
 

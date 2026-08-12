@@ -1,5 +1,5 @@
 ---
-description: Use Hirey Hi for people-to-people workflows or an owner-private handoff to another device — post listings, see matches, start pairings, schedule meetings, or leave/read a pull-only note across the same owner's Mac/PC/other host. Calls Hi's REST API directly via `curl` with a bearer token cached at `~/.config/hi/credentials.json`. If credentials are missing or expired, run `hi-onboard` first.
+description: Use Hirey Hi for people-to-people workflows, Product Signals, or an owner-private handoff to another device — post listings, see matches, start pairings, schedule meetings, report product bugs/feedback, or leave/read a pull-only note across the same owner's Mac/PC/other host. Calls Hi's REST API directly via `curl` with a bearer token cached at `~/.config/hi/credentials.json`. If credentials are missing or expired, run `hi-onboard` first.
 ---
 
 # Hi Use (REST workflows for people-finding)
@@ -25,6 +25,7 @@ Capabilities are loaded live from Hi's catalog (`GET https://hi.hirey.ai/v1/capa
   - "show me my listings"
   - "reach out to candidate N from the last batch"
   - "set up a Zoom / phone call with …"
+  - "HiRey is broken here" / "report this bug or product feedback"
   - "send this to my PC" / "what did my Mac leave for me?"
 
 ## Helper: one-line bearer
@@ -55,12 +56,31 @@ HI_TOKEN=$(jq -r .access_token ~/.config/hi/credentials.json 2>/dev/null)
 | **Standing rules to auto-accept / auto-decline meeting requests** (no per-request confirmation) | `hi.meeting-rules` | `set`, `get`, `clear` — e.g. `{"action":"set","timezone":"America/Los_Angeles","auto_accept":{"modalities":["zoom"],"weekly_windows":[{"days":["weekdays"],"start":"10:00","end":"18:00"}],"counterparty":"founder / investor / engineer","topics":"AI agents / recruiting"},"auto_decline":{"criteria":"pure sales pitch; cold outreach with no concrete topic"}}`. Hi evaluates and responds **platform-side** the moment a request arrives (works while you're offline); each auto action is reported via a `meeting.auto_responded` inbox event. |
 | Host / discover public multi-party activities | `hi.event-groups` | `create`, `search`, `get`, `mine`, `mine_upcoming`, `join`, `leave`, `invite`, `announce`, `schedule_occurrence`, `cancel_occurrence`, `reschedule_occurrence`, `rsvp`, `rsvp_summary` |
 | Check credits balance | `hi.agent-credits` | `balance`, `ledger` |
+| Submit or revisit a HiRey bug, friction, idea, request, or other product evidence | `hi.product-signals` | `submit`, `list`, `get`, `daily_summary`, `verify_repair`; caller-scoped by default, with company scope reserved for Product Signals staff |
 | **Bind the owner identity at the first write** (Sign in with Google — default) | `hi.google-link` | `start`, `poll` — see "Binding the owner identity" below; `hi.phone-binding` / `hi.email-binding` are the fallbacks |
 | Conversational state + relationship surface | `hi.conversations`, `hi.social-org`, `hi.social-permissions`, `hi.social-relationships` | (see schemas on demand) |
 | Static content (FAQ, prompts) | `hi.faq-search`, `hi.faq-get`, `hi.content-get`, `hi.content-render` | (read-only) |
 | Private note to/from another device in the same owner workspace | `hi.private-handoffs` | `send`, `inbox`, `mark_read`, `list_devices`; pull-only, no notification or auto-execution |
 
 If a capability you remember from this table is missing from the live catalog, **trust the catalog** — the table may lag.
+
+## Product Signals — report a HiRey bug or feedback
+
+When the user supplies concrete evidence about HiRey's product — a bug, friction, idea, request, validation, objection, security note, or general feedback — call `hi.product-signals` with `action:"submit"` in the same turn. This REST capability writes to the same durable Product Signals source ledger used by HiRey's iMessage/Rey and MCP intake; it is not a separate bug tracker.
+
+- Preserve the user's observed facts and expected behavior. Put an unverified theory only in `hypothesis`; never invent severity, impact, attribution, reproduction, or fix status.
+- Split independent symptoms into separate `items` and pass a stable 8–128 character `idempotency_key`. Reuse that exact key only when retrying the same submission.
+- Return only the real `BUG-` / `SIG-` receipts from the response. Never mint or guess a receipt in prose. The prefix is a stable legacy ID, not the signal's current kind.
+- `list` and `get` default to `scope:"mine"`. Use `scope:"company"` only when the current bearer is actually authorized as Product Signals staff.
+- Only call `verify_repair` after `get` or `list` returns `repair.status="live_please_verify"` and the original reporter has retried the original symptom. Use `verdict:"works_now"` or `"still_broken"` plus a stable idempotency key.
+
+Example:
+
+```bash
+curl -sS -X POST "$HI_BASE/v1/capabilities/hi.product-signals/call" \
+  -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
+  --data '{"action":"submit","idempotency_key":"imac-video-publish-20260812","items":[{"kind":"bug","title":"Video publishing remains stuck","area":"video publishing","observed":"Publishing keeps spinning","expected":"Publishing completes","source_kind":"self_report"}]}'
+```
 
 ## Binding the owner identity (Google default)
 

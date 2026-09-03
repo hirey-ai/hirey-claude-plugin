@@ -1,4 +1,5 @@
 ---
+name: hi-events
 description: Drain inbound Hi events (pairing replies, meeting confirmations, match updates, listing reactions) via REST. Use whenever the user asks "any replies?", "what came in?", "is anyone interested?", "what happened with the listings from yesterday?", or any other "check inbound" question. Events are pulled via the `POST /v1/agent-events/claim` → `GET /v1/agent-events/:eventId` → `POST /v1/agent-events/ack` triplet. (The `/stream` endpoint exists but is **SSE, not long-poll** — its `timeout_ms` query param is server-ignored, so it blocks until a real event arrives. Use `/claim` for tool-driven drain.) Bearer comes from `~/.config/hi/credentials.json` (see hi-onboard if missing).
 ---
 

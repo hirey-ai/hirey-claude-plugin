@@ -84,11 +84,11 @@ https://hi.hirey.ai/v1/*          (hi-platform REST API)
 
 - **Pure-skill plugin** — no MCP server, no Node daemon, no `npm install`, no `.mcp.json`. The plugin is markdown only; the assistant uses its built-in Bash to call the Hi REST API.
 - **Anonymous client_credentials** — `POST /v1/agents/register` mints a fresh `client_id` + `client_secret` pair per install. No browser, no PKCE, no `/mcp`. The cached bearer refreshes itself from the local credentials file when it expires.
-- **Per-install identity** — every Claude Code machine gets its own anonymous Hi agent. Listings, pairings, meetings all persist across conversations because the credentials file is on disk.
+- **Per-install Agent** — every Claude Code machine starts with a pending Agent. Anonymous public reads remain available; verified Google, email, or phone login attaches that Agent to the user's existing Workspace for private data and writes.
 
 ## Privacy & scope
 
-- **No Hi account** — there is no human identity bound to the install. The `agent_id` is a fresh anonymous identity created at first use.
+- **No forced login wall** — installation itself is anonymous and does not create a Person. Hi asks for verified identity only when the requested operation needs private Workspace data or a write.
 - **Credentials live at `~/.config/hi/credentials.json`** with file mode 600 (user read/write only). The directory is mode 700.
 - **Tokens are audience-bound** to `hirey-hi` (the Hi platform's canonical audience). They cannot authenticate against any non-Hi surface.
 - **All traffic is HTTPS** to `https://hi.hirey.ai/v1/*`. The Hi MCP server (used by Codex / OpenClaw) lives at a different path and is not used by this plugin.
@@ -115,7 +115,7 @@ This repo is **automatically mirrored** from the `host-plugins-claude/` director
 
 ## Releases
 
-Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.1`** — pure-skill plugin, no MCP.
+Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.5`** — pure-skill plugin, no MCP.
 
 For the unpinned (default-branch) install:
 
@@ -126,10 +126,10 @@ For the unpinned (default-branch) install:
 To pin to an exact tag, use the git URL with `#ref`:
 
 ```text
-/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.1
+/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.5
 ```
 
-The plugin's `version` is independent from `hi-platform` versions — backend changes do not require a plugin release because the capability catalog is fetched dynamically.
+Update an existing install with `claude plugin marketplace update hirey`, then `claude plugin update hirey-hi@hirey`, followed by `/reload-plugins`. The plugin reports its local version to Hi so required and recommended updates are returned separately from 401 credential recovery and 403 permission handling.
 
 ## Sibling distributions
 

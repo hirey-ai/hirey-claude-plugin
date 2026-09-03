@@ -1,5 +1,6 @@
 ---
-description: First-time setup for the Hirey Hi plugin. Use whenever (1) the user just installed the plugin and is about to do anything Hi-related, OR (2) `~/.config/hi/credentials.json` is missing or its `access_token` field is expired, OR (3) any subsequent `curl` to `https://hi.hirey.ai/v1/*` returned `401 invalid_token`. Bootstraps an anonymous Hi agent identity (no Hi account, no browser OAuth, no consent screen, no user click), writes a long-lived credentials file to `~/.config/hi/credentials.json`, and refreshes the bearer token from cached client_credentials. CRITICAL — this plugin does NOT use MCP, does NOT use `/mcp`, does NOT do interactive OAuth. The entire bootstrap is a few curl commands the assistant runs via Bash.
+name: hi-onboard
+description: First-time setup and reconnect for the Hirey Hi Claude plugin. Use after install, when credentials are missing, or when Hi returns 401 invalid_token. Preserve anonymous read access, refresh the existing installation before considering reset, and follow the host-specific version policy returned by Hi. This plugin uses REST rather than MCP.
 ---
 
 # Hi Onboard (one-time bootstrap, REST + client_credentials)
@@ -20,6 +21,23 @@ Hi is Hirey's people-to-people platform. This plugin gives Claude direct REST ac
 - `~/.config/hi/credentials.json` already exists and the cached `access_token` is fresh (less than ~50 minutes old) — call the target Hi endpoint directly with the cached token
 - the user is asking a workflow question (find, match, pair, meeting) — go to `hi-use` (which will pull credentials transparently)
 - inbound events drain — go to `hi-events`
+
+## Check the Claude plugin version first
+
+At the start of setup or recovery, call the public catalog with the installed plugin version:
+
+```bash
+curl -sS https://hi.hirey.ai/v1/capabilities \
+  -H 'x-hirey-plugin-host: claude' \
+  -H 'x-hirey-plugin-version: 0.2.5' \
+  | jq '._meta.hirey_plugin'
+```
+
+- `update_required=true`: run `update_command`, then run `/reload-plugins` before retrying.
+- `update_recommended=true`: tell the user an update is available, but do not block a compatible request.
+- `401 missing_bearer` or `invalid_token`: run the credential recovery below and retry once.
+- `403 insufficient_oauth_scope` or `forbidden`: the credential is valid; do not create another Agent or loop through bootstrap.
+- A valid anonymous installation may use public People/Listing reads without owner login. Only private Workspace data and writes should start Google/email/phone identity binding.
 
 ## Bootstrap sequence (assistant runs all of this via Bash, no user touch)
 

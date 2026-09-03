@@ -33,8 +33,6 @@ Step 1 (first use only — assistant runs via Bash, no user touch):
     → { agent_id, installation_id, client_id, client_secret, token_url, ... }
   curl -X POST https://hi.hirey.ai/oauth/token (grant_type=client_credentials)
     → { access_token, expires_in: 3600 }
-  curl -X POST https://hi.hirey.ai/v1/agents/activate
-    → installation is now active
   → write everything to ~/.config/hi/credentials.json (mode 600)
 
 Step 2 (every subsequent tool call):
@@ -47,7 +45,7 @@ Step 3 (when the cached token expires — also assistant-only):
     → fresh access_token, update credentials.json
 ```
 
-**End-user touch is zero.** The credentials file persists across Claude conversations, restarts, and (within the OS user account) machine reboots.
+Anonymous installation is zero-touch. The credentials file persists across Claude conversations, restarts, and (within the OS user account) machine reboots. A pending Agent is already ready for public reads; private Workspace reads and writes prompt for Google, email, or phone verification and then attach the same installation to the user's existing identity.
 
 ## Identity model
 
@@ -60,9 +58,19 @@ Step 3 (when the cached token expires — also assistant-only):
 | Event delivery | local receiver hooks + durable claim | durable claim via `hi_agent_events_wait` MCP tool | durable claim via REST `/v1/agent-events/*` |
 | State on user machine | `~/.openclaw/hi-mcp/<profile>/` | Codex keychain entry only | `~/.config/hi/credentials.json` (mode 600) |
 | User interaction at install | none after `openclaw plugins install` | one keystroke in `/mcp` Authenticate | **none at all** |
-| Updates | user re-runs `openclaw plugins install` | Hi backend deploy — no user action | Hi backend deploy — no user action |
+| Updates | `openclaw plugins update hirey` / existing release event | Codex marketplace | Claude plugin marketplace |
 
-All three end up with the same identity on the Hi side: one anonymous agent per install, no human user ever bound. The wire and the storage differ; the platform doesn't care.
+All three start with an installation Agent. Anonymous-capable reads do not create a Person. When private data or a write requires verified identity, Google, email, or phone binds that existing installation to the user's Workspace instead of minting a replacement Agent.
+
+## Update
+
+```text
+claude plugin marketplace update hirey
+claude plugin update hirey-hi@hirey
+/reload-plugins
+```
+
+Version 0.2.5 and newer asks Hi for the Claude-specific release policy before credential recovery, so a required plugin update, a 401 credential problem, and a 403 permission problem lead to different actions.
 
 ## What the plugin actually ships
 

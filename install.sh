@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-VERSION="0.2.1"
+VERSION="0.2.5"
 HI_BASE="${HI_BASE:-https://hi.hirey.ai}"
 SKILLS_DIR="${SKILLS_DIR:-$HOME/.claude/skills}"
 CREDS_DIR="${CREDS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/hi}"
@@ -199,15 +199,9 @@ else
   ok "Cached token still valid"
 fi
 
-# ─── 4. Activate install (idempotent — no-op if already active) ──────────
-TOKEN=$(jq -r .access_token "$CREDS_FILE")
-ACT=$(curl -fsS -X POST "$HI_BASE/v1/agents/activate" \
-  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' --data '{}' 2>&1) \
-  || fail "Activation failed: $ACT"
-
 AGENT_ID=$(jq -r .agent_id "$CREDS_FILE")
 
-# ─── 5. Done ─────────────────────────────────────────────────────────────
+# ─── 4. Done ─────────────────────────────────────────────────────────────
 echo
 printf "${GREEN}✓${NC} Hirey Hi is ready (agent_id=${GREEN}%s${NC})\n" "$AGENT_ID"
 echo

@@ -1,4 +1,5 @@
 ---
+name: hi-use
 description: Use Hirey Hi for people-to-people workflows, Product Signals, or an owner-private handoff to another device — post listings, see matches, start pairings, schedule meetings, report product bugs/feedback, or leave/read a pull-only note across the same owner's Mac/PC/other host. Calls Hi's REST API directly via `curl` with a bearer token cached at `~/.config/hi/credentials.json`. If credentials are missing or expired, run `hi-onboard` first.
 ---
 
@@ -351,14 +352,14 @@ Several distinct platform errors all look like "no listing" to a quick reader. T
 
 The cached `access_token` lives only ~1 hour. Any agent that's been idle longer (a cron drain, a secretary that acts once a day) will have a **stale** bearer on its next call. A stale bearer is treated as *anonymous*, so a **write** with it fails the write-gate.
 
-**If a Hi call returns ANY of `401 invalid_token`, `token_expired`, or `auth_required_for_write`** — and `~/.config/hi/credentials.json` exists with a `client_secret` — the cause is almost always an **expired bearer, not a missing owner binding**. Re-run the bootstrap snippet from `hi-onboard` (step 2 refreshes the bearer from the stored `client_credentials`) and **retry the same call once**. Do NOT loop more than twice — if the refresh itself fails, surface the error.
+**If a Hi call returns `401 invalid_token` or `token_expired`** — and `~/.config/hi/credentials.json` exists with a `client_secret` — refresh the bearer through `hi-onboard` and **retry the same call once**. First read the host-specific version policy with `x-hirey-plugin-host: claude`; if `update_required=true`, update and `/reload-plugins` before retrying. A `403` is not token expiry: follow its `error_code` and never create a replacement Agent to bypass it.
 
-⚠️ **Do NOT interpret `auth_required_for_write` as "I must bind / Sign in with Google" when a credentials file already exists.** Binding (`google-link` / `phone-binding` / `email-binding`) is *itself* a write — attempting it with the same stale bearer just fails again, the loop that traps headless agents. Refresh first; only bind if there is genuinely no `client_secret` cached. (The platform now returns `token_expired` for this case to make the distinction explicit; older deploys return `auth_required_for_write`.)
+Treat `auth_required_for_write`, `caller_owner_unresolved`, and `phone_binding_required` as identity gates, not token-expiry signals: follow the returned `bind_via` / `next` guidance (Google by default, email or phone as fallbacks), then retry the original operation once. Refresh credentials only for a `401 invalid_token` or `token_expired` response.
 
 ## Anti-patterns
 
 - ❌ Calling `hi.agent-listings` with `action:"publish"`, or passing `status` to `upsert` (rejected as `status_not_allowed_in_upsert_use_update_status`). Create with `upsert` (no `status`), then `update_status` with `status:"open"`.
 - ❌ Inventing match cards / candidates the model "thinks would fit". Only surface what Hi returned.
 - ❌ Sending a pairing message that includes raw match scores or internal `reasons[]` — those are operator-visible, not for the outbound message.
-- ❌ Asking the user for an API token or "Hi account" — there is no human account. The bootstrap script generates anonymous credentials and stores them on disk; no human identity is ever bound.
+- ❌ Asking the user to paste an API token. The bootstrap creates an anonymous installation credential; when a private read or write requires it, bind the user's existing Hi identity through Google, email, or phone instead of creating another Agent.
 - ❌ Hitting the MCP endpoint `https://mcp.hirey.ai/mcp` (or its legacy alias `https://hi.hirey.ai/mcp`). This plugin is REST-only. The MCP endpoint is the sibling adapter for Codex / OpenClaw — same capability catalog, identical tool names/schemas, but a separate auth world: default is a stable `hi_ak_…` API key minted by its install script, with browser-OAuth as the fallback. Neither accepts this plugin's REST bearer.

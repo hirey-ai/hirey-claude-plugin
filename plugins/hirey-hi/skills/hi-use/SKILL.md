@@ -354,7 +354,7 @@ The cached `access_token` lives only ~1 hour. Any agent that's been idle longer 
 
 **If a Hi call returns `401 invalid_token` or `token_expired`** — and `~/.config/hi/credentials.json` exists with a `client_secret` — refresh the bearer through `hi-onboard` and **retry the same call once**. First read the host-specific version policy with `x-hirey-plugin-host: claude`; if `update_required=true`, update and `/reload-plugins` before retrying. A `403` is not token expiry: follow its `error_code` and never create a replacement Agent to bypass it.
 
-⚠️ **Do NOT interpret `auth_required_for_write` as "I must bind / Sign in with Google" when a credentials file already exists.** Binding (`google-link` / `phone-binding` / `email-binding`) is *itself* a write — attempting it with the same stale bearer just fails again, the loop that traps headless agents. Refresh first; only bind if there is genuinely no `client_secret` cached. (The platform now returns `token_expired` for this case to make the distinction explicit; older deploys return `auth_required_for_write`.)
+Treat `auth_required_for_write`, `caller_owner_unresolved`, and `phone_binding_required` as identity gates, not token-expiry signals: follow the returned `bind_via` / `next` guidance (Google by default, email or phone as fallbacks), then retry the original operation once. Refresh credentials only for a `401 invalid_token` or `token_expired` response.
 
 ## Anti-patterns
 

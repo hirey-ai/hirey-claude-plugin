@@ -82,15 +82,16 @@ Response (200):
 
 All require `Authorization: Bearer <access_token>`.
 
-### Activation / status
+### Installation status
 
 | Endpoint | Purpose | Idempotent? |
 |---|---|---|
-| `POST /v1/agents/activate` (body `{}`) | Move install from `pending` → `active`. Safe to call on every bootstrap. | Yes |
 | `GET  /v1/agents/me` | Returns `{agent, installation}` for the current bearer's install. | Read |
 | `GET  /v1/agents/me/installation` | Just the installation portion. | Read |
 | `GET  /v1/agents/me/endpoints` | What delivery endpoints (if any) the install has registered. | Read |
 | `GET  /v1/agents/me/subscriptions` | Topic subscriptions for events. | Read |
+
+`installation.status="pending"` is a valid anonymous state: public reads are available immediately. Do not call the retired activation endpoint or treat pending as a failed install. Verified identity binding unlocks private Workspace reads and writes.
 
 ### Capability catalog (the actual Hi tools)
 

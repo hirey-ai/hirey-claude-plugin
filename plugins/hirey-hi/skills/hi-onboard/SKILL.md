@@ -12,8 +12,7 @@ Hi is Hirey's people-to-people platform. This plugin gives Claude direct REST ac
 - the user just enabled the `hirey-hi` plugin and is about to ask for any Hi workflow
 - the user types "set up hi", "install hi", "register hi"
 - you are about to call a Hi REST endpoint and `[ -f ~/.config/hi/credentials.json ]` returns false
-- the assistant just got a `401 invalid_token`, `token_expired`, or `agent_activation_required` from a Hi endpoint — step 2 refreshes the bearer from the cached `client_credentials`, then retry the call
-- the assistant got `auth_required_for_write` on a **write/bind** call AND `~/.config/hi/credentials.json` already exists — this is a stale bearer, not a missing owner: refresh here first and retry the SAME call; do NOT jump to binding (binding is itself a write and will loop on the same stale token)
+- the assistant just got a `401 invalid_token` or `token_expired` from a Hi endpoint — step 2 refreshes the bearer from the cached `client_credentials`, then retries the call once
 - the user explicitly says "re-register", "reset hi identity", "log in again"
 
 ## Do not use when
@@ -120,12 +119,9 @@ if [ "$NOW" -ge "$EXP_AT" ]; then
   ' "$HI_CRED_FILE" > "$HI_CRED_FILE.tmp.$$" && mv "$HI_CRED_FILE.tmp.$$" "$HI_CRED_FILE" && chmod 600 "$HI_CRED_FILE"
 fi
 
-# 3) Activate the install (idempotent — second call is a no-op).
+# 3) Confirm the installation credential. A pending Agent is intentionally usable
+# for anonymous public reads; do not call the retired activation endpoint.
 TOKEN=$(jq -r '.access_token' "$HI_CRED_FILE")
-ACT=$(curl -sS -X POST "$HI_BASE/v1/agents/activate" \
-  -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' --data '{}')
-
-# 4) Confirm: hit /v1/agents/me, surface status to the user.
 ME=$(curl -sS "$HI_BASE/v1/agents/me" -H "authorization: Bearer $TOKEN")
 echo "$ME" | jq '{agent_id: .agent.agent_id, status: .agent.status, installation_id: .installation.installation_id, installation_status: .installation.status}'
 ```
@@ -135,7 +131,7 @@ If any step exits non-zero or returns `error` JSON, report the error to the user
 - `agent_register_failed` — Hi platform is unreachable. Network issue, not a plugin issue. Surface the message and stop.
 - `hi_auth_client_register_failed:*` — hi-auth service is down. Surface and stop.
 - `invalid_grant` from `/oauth/token` — the OAuth client was revoked/expired server-side. **Do NOT auto-delete `~/.config/hi/credentials.json`** — deleting it mints a brand-new agent and orphans the existing agent + any phone-bound workspace data. Surface the error to the user and let THEM decide: if a phone was bound, the workspace data is recoverable by re-binding the same phone on a fresh identity, so discarding creds is only safe with explicit user consent.
-- `installation_not_active` from `/v1/agents/activate` — server already moved the install to terminal state. Treat as fatal, surface, ask the user if they want a fresh identity (`rm ~/.config/hi/credentials.json` + redo).
+- `agent_disabled` or `agent_merged` from `/v1/agents/me` or a capability call — stop and surface the server recovery guidance. Do not create a replacement Agent.
 
 ## Final step (MANDATORY): profile + first listing — onboarding is NOT done until this runs
 

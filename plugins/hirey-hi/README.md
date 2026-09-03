@@ -33,8 +33,6 @@ Step 1 (first use only — assistant runs via Bash, no user touch):
     → { agent_id, installation_id, client_id, client_secret, token_url, ... }
   curl -X POST https://hi.hirey.ai/oauth/token (grant_type=client_credentials)
     → { access_token, expires_in: 3600 }
-  curl -X POST https://hi.hirey.ai/v1/agents/activate
-    → installation is now active
   → write everything to ~/.config/hi/credentials.json (mode 600)
 
 Step 2 (every subsequent tool call):
@@ -47,7 +45,7 @@ Step 3 (when the cached token expires — also assistant-only):
     → fresh access_token, update credentials.json
 ```
 
-Anonymous installation is zero-touch. The credentials file persists across Claude conversations, restarts, and (within the OS user account) machine reboots. Public reads can use that pending Agent; private Workspace reads and writes prompt for Google, email, or phone verification and then attach the same installation to the user's existing identity.
+Anonymous installation is zero-touch. The credentials file persists across Claude conversations, restarts, and (within the OS user account) machine reboots. A pending Agent is already ready for public reads; private Workspace reads and writes prompt for Google, email, or phone verification and then attach the same installation to the user's existing identity.
 
 ## Identity model
 

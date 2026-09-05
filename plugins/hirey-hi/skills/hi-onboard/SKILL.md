@@ -37,7 +37,7 @@ curl -sS https://hi.hirey.ai/v1/capabilities \
 - `update_recommended=true`: tell the user an update is available, but do not block a compatible request.
 - `401 missing_bearer` or `invalid_token`: run the credential recovery below and retry once.
 - `403 insufficient_oauth_scope` or `forbidden`: the credential is valid; do not create another Agent or loop through bootstrap.
-- A valid anonymous installation may use public People/Listing reads without owner login. Only private Workspace data and writes should start Google/email/phone identity binding.
+- A pending Agent may use only public `people.find`, `people.explain`, and staged `capture.record`. Other operations require verified identity.
 
 ## Bootstrap sequence (assistant runs all of this via Bash, no user touch)
 
@@ -134,37 +134,25 @@ If any step exits non-zero or returns `error` JSON, report the error to the user
 - `invalid_grant` from `/oauth/token` — the OAuth client was revoked/expired server-side. **Do NOT auto-delete `~/.config/hi/credentials.json`** — deleting it mints a brand-new agent and orphans the existing agent + any phone-bound workspace data. Surface the error to the user and let THEM decide: if a phone was bound, the workspace data is recoverable by re-binding the same phone on a fresh identity, so discarding creds is only safe with explicit user consent.
 - `agent_disabled` or `agent_merged` from `/v1/agents/me` or a capability call — stop and surface the server recovery guidance. Do not create a replacement Agent.
 
-## Final step (MANDATORY): profile + first listing — onboarding is NOT done until this runs
+## After setup: continue the user's request
 
-Bootstrapping an identity is only HALF of onboarding. A new agent with **no owner profile and no
-listing is invisible**: it pollutes discovery and the user gets nothing back. **Do not stop at
-"agent activated" and leave the user staring at a blank chat.** After bootstrap succeeds you MUST
-drive the user to a profile + first listing:
+A valid installation credential completes plugin setup. Do not require a profile, Listing,
+or identity update to finish setup, and do not create these records automatically.
 
-1. **If `/v1/agents/me` (or the activate response) returns a `welcome` object, run its
-   `instruction_to_llm` verbatim** — that is the platform-authored happy path (asks intent, previews
-   recent network activity, walks profile → listing). Prefer it whenever present.
-2. Otherwise do it directly:
-   - Ask the user, in their language: **"What do you want Hi to do for you?"** — e.g. hire someone,
-     find a job, raise money, find a cofounder, find housing, make friends/dates, find a lawyer.
-   - Create or update their identity through the exact operation returned by
-     `workspace_workflows({"action":"catalog"})`; never fall back to the retired `owners` tool.
-   - Draft their **first listing** with `workspace_workflows`, action `listing.create`, matching the
-     goal above. Confirm before any separately confirmed publication action.
-3. Confirm completion any time via `/v1/agents/me` → `onboarding_status` (`profile_ready`,
-   `listing_count`, `next_action`). If it is not `complete`, resume the missing step — this is
-   idempotent, so a later turn (or a re-run) can finish what a previous turn left undone.
-
-The exact profile/listing field schemas live in the **hi-use** skill — load it if you need them.
+- Continue the user's original request. If no goal was supplied, ask what they want help with.
+- A pending Agent may use only `people.find`, `people.explain`, and staged `capture.record`.
+- For private Workspace work, messaging, meetings, or publication, guide the user through the
+  supported Google, phone, or email binding first, then retry the requested operation.
+- Create a Need or Listing only when the user's request calls for it. Read the current operation
+  contract from `workspace_workflows` and obtain confirmation for actions that require it.
+- Do not rely on legacy `onboarding_status`, `profile_ready`, or `listing_count` fields to
+  decide whether setup is complete.
 
 ## What to tell the user
 
-Do NOT show the client_secret, access_token, or any secret (the `agent_id` is fine). Frame success
-as the START of setup, not the end — lead with the intent question instead of "ready to find people":
-
-> "Hi is set up (agent `ag_xxxxxxxxxxxx`). To make it actually useful, tell me what you want Hi to do
->  — find a job, hire someone, raise money, find a cofounder, housing, friends/dates? I'll set up your
->  profile and your first listing so people (and their agents) can find and reach you."
+Never show the client_secret, access_token, or credential file. Report the actual installation
+state and continue their request. For a pending installation, say that public people search is
+ready and that private work will require identity verification when requested.
 
 ## Why this works without OAuth/browser/clicks
 

@@ -28,11 +28,12 @@ At the start of setup or recovery, call the public catalog with the installed pl
 ```bash
 curl -sS https://hi.hirey.ai/v1/capabilities \
   -H 'x-hirey-plugin-host: claude' \
-  -H 'x-hirey-plugin-version: 0.2.5' \
+  -H 'x-hirey-plugin-version: 0.2.6' \
   | jq '._meta.hirey_plugin'
 ```
 
-- `update_required=true`: run `update_command`, then run `/reload-plugins` before retrying.
+- `update_required=true`: run the returned official install command, then run `/reload-plugins`
+  before retrying. The install command refreshes both the plugin and its Skills.
 - `update_recommended=true`: tell the user an update is available, but do not block a compatible request.
 - `401 missing_bearer` or `invalid_token`: run the credential recovery below and retry once.
 - `403 insufficient_oauth_scope` or `forbidden`: the credential is valid; do not create another Agent or loop through bootstrap.
@@ -146,10 +147,10 @@ drive the user to a profile + first listing:
 2. Otherwise do it directly:
    - Ask the user, in their language: **"What do you want Hi to do for you?"** — e.g. hire someone,
      find a job, raise money, find a cofounder, find housing, make friends/dates, find a lawyer.
-   - Create their **profile**: call the `owners` capability, action `update_profile`, with their real
-     `display_name` + a one-line `headline` (+ `bio_markdown` if they give detail).
-   - Draft their **first listing**: call the `agent_listings` capability, action `upsert`, matching
-     the goal above. Confirm the draft with the user before publishing.
+   - Create or update their identity through the exact operation returned by
+     `workspace_workflows({"action":"catalog"})`; never fall back to the retired `owners` tool.
+   - Draft their **first listing** with `workspace_workflows`, action `listing.create`, matching the
+     goal above. Confirm before any separately confirmed publication action.
 3. Confirm completion any time via `/v1/agents/me` → `onboarding_status` (`profile_ready`,
    `listing_count`, `next_action`). If it is not `complete`, resume the missing step — this is
    idempotent, so a later turn (or a re-run) can finish what a previous turn left undone.

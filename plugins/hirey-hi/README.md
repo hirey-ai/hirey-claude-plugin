@@ -49,13 +49,13 @@ Anonymous installation is zero-touch. The credentials file persists across Claud
 
 ## Identity model
 
-| | OpenClaw (npm-based) | Codex plugin | Claude Code (this plugin) |
+| | OpenClaw native plugin | Codex plugin | Claude Code (this plugin) |
 |---|---|---|---|
 | Distribution | ClawHub `clawhub:hirey` / `npm i @hirey/hi-mcp-server` | `codex plugin marketplace add hirey-ai/hirey-codex-plugin` | `/plugin marketplace add hirey-ai/hirey-claude-plugin` |
-| Local install | `npm install` of `@hirey/hi-mcp-server` + `@hirey/hi-agent-receiver` | none | none |
-| Process model | local stdio MCP child + local hi-agent-receiver | remote MCP over HTTPS | **pure REST over HTTPS, no MCP layer** |
-| Auth | `client_credentials` baked into local state | OAuth 2.1 (DCR + PKCE) via `codex mcp login hi` | **`client_credentials` minted on first use, cached at `~/.config/hi/credentials.json`** |
-| Event delivery | local receiver hooks + durable claim | durable claim via `hi_agent_events_wait` MCP tool | durable claim via REST `/v1/agent-events/*` |
+| Local install | native OpenClaw plugin | none | none |
+| Process model | in-process tools + event service | remote MCP over HTTPS | **pure REST over HTTPS, no MCP layer** |
+| Auth | `client_credentials` in plugin state | OAuth 2.1 (DCR + PKCE) via Codex connector | **`client_credentials` minted on first use, cached at `~/.config/hi/credentials.json`** |
+| Event delivery | in-process claim/push service | remote MCP event tools | business Inbox via `workspace_workflows` |
 | State on user machine | `~/.openclaw/hi-mcp/<profile>/` | Codex keychain entry only | `~/.config/hi/credentials.json` (mode 600) |
 | User interaction at install | none after `openclaw plugins install` | one keystroke in `/mcp` Authenticate | **none at all** |
 | Updates | `openclaw plugins update hirey` / existing release event | Codex marketplace | Claude plugin marketplace |
@@ -64,13 +64,14 @@ All three start with an installation Agent. Anonymous-capable reads do not creat
 
 ## Update
 
-```text
-claude plugin marketplace update hirey
-claude plugin update hirey-hi@hirey
-/reload-plugins
+```bash
+curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
 ```
 
-Version 0.2.5 and newer asks Hi for the Claude-specific release policy before credential recovery, so a required plugin update, a 401 credential problem, and a 403 permission problem lead to different actions.
+Then run `/reload-plugins`. Re-running the installer preserves the existing credential and updates
+all four Skills, including curl-installed copies outside the marketplace cache.
+
+Version 0.2.6 and newer asks Hi for the Claude-specific release policy before credential recovery and routes every business operation through `workspace_workflows`. A required plugin update, a 401 credential problem, and a 403 permission problem lead to different actions.
 
 ## What the plugin actually ships
 
@@ -79,8 +80,8 @@ plugins/hirey-hi/
   .claude-plugin/plugin.json     # Claude Code plugin manifest
   skills/
     hi-onboard/SKILL.md          # one-time bootstrap (idempotent)
-    hi-use/SKILL.md              # listings / matching / pairings / meetings
-    hi-events/SKILL.md           # inbound event drain
+    hi-use/SKILL.md              # canonical workspace_workflows REST adapter
+    hi-events/SKILL.md           # canonical business Inbox
     hi-repair/SKILL.md           # scoped Product Signal -> root cause -> reviewable PR workflow
   reference/
     api.md                       # full REST API + credentials lifecycle reference
@@ -91,7 +92,10 @@ plugins/hirey-hi/
 
 ## Backing service
 
-`https://hi.hirey.ai` is hi-platform (Express + REST). The `hi-mcp-server` (Codex / OpenClaw path) is still there at `https://mcp.hirey.ai/mcp` (legacy alias `https://hi.hirey.ai/mcp`), but this plugin doesn't touch it — every call goes straight to `/v1/*` REST endpoints. Tools are loaded dynamically from `GET /v1/capabilities` so the tool inventory stays in sync without re-releasing the plugin.
+`https://hi.hirey.ai` is hi-platform (Express + REST). The `hi-mcp-server` used by Codex and generic
+MCP hosts remains at `https://mcp.hirey.ai/mcp`; this plugin calls `/v1/*` REST endpoints directly.
+The public capability catalog exposes `workspace_workflows` plus the three identity-binding tools.
+The live `workspace_workflows` `catalog` action is the source of truth for business operations.
 
 ## Local development / staging
 

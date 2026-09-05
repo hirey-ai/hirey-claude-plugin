@@ -102,42 +102,39 @@ GET  /v1/capabilities/<cap_id>/schema              # JSON Schema for the request
 POST /v1/capabilities/<cap_id>/call                # invoke (Bearer required)
 ```
 
-`<cap_id>` examples (full list comes from `/v1/capabilities`):
+The business surface is intentionally narrow:
 
 | Capability ID | Tool name | What it does |
 |---|---|---|
-| `hi.agent-listings` | `agent_listings` | CRUD on the user's search listings ("I want to find …") |
-| `hi.listing-taxonomy` | `listing_taxonomy` | Read-only taxonomy of `listing_kind` / `subkind` values |
-| `hi.matching-sessions` | `matching_sessions` | Pull the ranked match feed for a listing; mark candidates for contact |
-| `hi.pairings` | `pairings` | Open and continue 1:1 message threads with matched people |
-| `hi.thread-meetings` | `thread_meetings` | Propose / confirm meetings inside a pairing |
-| `hi.agent-credits` | `agent_credits` | Read-only credits balance and ledger |
+| `hi.workspace-workflows` | `workspace_workflows` | Canonical Core operations. Call `action:"catalog"` first. |
 | `hi.google-link` | `google_link` | **Default** owner-identity bind at the write gate — Sign in with Google (`start` → surface `verification_url`, `poll` until `status:"verified"`) |
 | `hi.phone-binding` | `phone_binding` | Fallback owner-identity bind — `bind` (phone) → `verify` (SMS code) |
 | `hi.email-binding` | `email_binding` | Fallback owner-identity bind — `bind` (email) → `verify` (emailed code) |
-| `hi.conversations` | `conversations` | Conversation history surface |
-| `hi.social-org` | `social_org` | Org / company surface |
-| `hi.social-permissions` | `social_permissions` | Permission edges between subjects |
-| `hi.social-relationships` | `social_relationships` | Relationship edges (cofounder, etc.) |
-| `hi.faq-get` / `hi.faq-search` | `faq_get` / `faq_search` | Public FAQ surface |
-| `hi.content-get` / `hi.content-render` | `content_get` / `content_render` | Static + templated content |
 
 Call shape:
 
 ```bash
-curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.agent-listings/call" \
+curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.workspace-workflows/call" \
   -H "authorization: Bearer $HI_TOKEN" \
   -H 'content-type: application/json' \
-  --data '{"action":"upsert","text":"need 5 senior Go engineers in San Francisco"}'
+  -H 'x-hirey-plugin-host: claude' \
+  -H 'x-hirey-plugin-version: 0.2.6' \
+  --data '{"action":"people.find","payload":{"query":"senior Go engineers in San Francisco"}}'
 ```
 
-`status` is not accepted on `upsert` (returns `status_not_allowed_in_upsert_use_update_status`). After upsert, open the listing separately: `{"action":"update_status","listing_id":"<from upsert>","status":"open"}`.
+Business inputs always live under `payload`. Write and external-effect operations require a stable
+`idempotency_key`; operations marked `explicit_user_confirmation` also require the exact
+`confirmation` object. The response wraps the Core operation receipt in top-level `result`.
 
-Returns either `{ ok: true, data: {...} }` or `{ error: "...", capability_id, tool_name }`.
+Never call legacy business capability IDs such as `hi.owners`, `hi.agent-listings`,
+`hi.matching-sessions`, `hi.pairings`, or `hi.thread-meetings`; they are not aliases and return 404.
 
 ### Owner-identity binding at the write gate
 
-Reading/searching works on the anonymous bootstrap credentials. The owner identity is bound only when the first WRITE hits the write gate — the capability call returns `phone_binding_required` / `caller_owner_unresolved`. **Default anchor: Sign in with Google** via `hi.google-link`; `hi.phone-binding` and `hi.email-binding` are the fallbacks. All three are write-gate-exempt (callable on the anonymous bearer) and converge to the **same** workspace — the same Google account / phone / email never creates a second one.
+Pending credentials may call only the anonymous operations returned by `workspace_workflows`
+(`people.find`, `people.explain`, and staged `capture.record`). Private Workspace work requires
+verified identity. **Default anchor: Sign in with Google** via `hi.google-link`;
+`hi.phone-binding` and `hi.email-binding` are fallbacks.
 
 ```bash
 # start → returns a verification_url the user opens in a browser to Sign in with Google (valid ~10 min)
@@ -157,14 +154,18 @@ curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
 
 The `poll` "verified" payload is identical to `hi.phone-binding` / `hi.email-binding` `verify` plus a `status` field. Errors `link_expired` / `link_already_consumed` mean the link is dead — call `start` again for a fresh URL. See the `hi-use` skill's "Binding the owner identity (Google default)" section for the agent-facing flow.
 
-### Event surface
+### Transport event surface
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/v1/agent-events/stream` | GET | Long-poll for inbound events. Query param `timeout_ms` (default 30000, cap ~30s). |
+| `/v1/agent-events/stream` | GET | Transport delivery only; do not use it as the business Inbox. |
 | `/v1/agent-events/claim` | POST | Claim a lease-protected batch. Body `{lease_ms?: 60000, max?: 50}`. |
 | `/v1/agent-events/:eventId` | GET | Fetch a single event's full payload (claim-only). |
-| `/v1/agent-events/ack` | POST | Ack events. Body `{event_ids: [...], lease_id?: "..."}`. |
+| `/v1/agent-events/ack` | POST | Ack transport events. Body `{event_ids: [...], lease_id?: "..."}`. |
+
+For messages, tasks, notifications, and user-visible work, call the canonical
+`agent_message.list` operation through `workspace_workflows`. Listing is read-only and must not
+claim or acknowledge items.
 
 ## Public discovery (no auth)
 

@@ -24,7 +24,7 @@
 
 set -euo pipefail
 
-VERSION="0.2.5"
+VERSION="0.2.6"
 HI_BASE="${HI_BASE:-https://hi.hirey.ai}"
 SKILLS_DIR="${SKILLS_DIR:-$HOME/.claude/skills}"
 CREDS_DIR="${CREDS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/hi}"
@@ -205,7 +205,7 @@ AGENT_ID=$(jq -r .agent_id "$CREDS_FILE")
 echo
 printf "${GREEN}✓${NC} Hirey Hi is ready (agent_id=${GREEN}%s${NC})\n" "$AGENT_ID"
 echo
-echo "  Skills installed at: $SKILLS_DIR/hi-{onboard,use,events}/"
+echo "  Skills installed at: $SKILLS_DIR/hi-{onboard,use,events,repair}/"
 echo "  Credentials at:      $CREDS_FILE (mode 600)"
 echo
 echo "  Now ask Claude things like:"

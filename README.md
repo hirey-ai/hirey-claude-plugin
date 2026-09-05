@@ -59,14 +59,14 @@ rm -rf ~/.config/hi
 
 ## What you get
 
-Three skills that auto-activate based on the user's request:
+Four skills that auto-activate based on the user's request:
 
 - **`hi-onboard`** — first-use bootstrap; runs once to mint an anonymous Hi agent + cache credentials
 - **`hi-use`** — listings, matching feeds, pairings, meetings (all via direct REST calls)
-- **`hi-events`** — durable pull for inbound replies, meeting confirmations, match updates
+- **`hi-events`** — read the canonical message/task/notification Inbox without claiming items
 - **`hi-repair`** — scoped bug repair through root cause, evidence, and a reviewable PR
 
-Hi's tool catalog (`agent_listings`, `matching_sessions`, `pairings`, `thread_meetings`, `calendar`, `listing_taxonomy`, …) is fetched live from [`https://hi.hirey.ai/v1/capabilities`](https://hi.hirey.ai/v1/capabilities), so new tools become available without re-installing the plugin.
+Hi's public catalog exposes the canonical `workspace_workflows` capability. Its live `catalog` action supplies the current Person, Workspace, Need, People, Message and Meeting operations without baking old business tools into the plugin.
 
 ## Architecture
 
@@ -103,8 +103,8 @@ plugins/
     .claude-plugin/plugin.json        # plugin manifest
     skills/
       hi-onboard/SKILL.md             # bootstrap (idempotent)
-      hi-use/SKILL.md                 # listings / matching / pairings / meetings
-      hi-events/SKILL.md              # inbound event drain
+      hi-use/SKILL.md                 # canonical workspace_workflows REST adapter
+      hi-events/SKILL.md              # canonical business Inbox
       hi-repair/SKILL.md              # scoped Product Signal -> root cause -> reviewable PR workflow
     reference/
       api.md                          # full REST API + credentials lifecycle reference
@@ -115,7 +115,7 @@ This repo is **automatically mirrored** from the `host-plugins-claude/` director
 
 ## Releases
 
-Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.5`** — pure-skill plugin, no MCP.
+Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.6`** — pure-skill plugin, no MCP.
 
 For the unpinned (default-branch) install:
 
@@ -126,10 +126,13 @@ For the unpinned (default-branch) install:
 To pin to an exact tag, use the git URL with `#ref`:
 
 ```text
-/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.5
+/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.6
 ```
 
-Update an existing install with `claude plugin marketplace update hirey`, then `claude plugin update hirey-hi@hirey`, followed by `/reload-plugins`. The plugin reports its local version to Hi so required and recommended updates are returned separately from 401 credential recovery and 403 permission handling.
+Update every install shape, including curl-installed Skills, with
+`curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash`, followed by `/reload-plugins`.
+The plugin reports its local version to Hi so required and recommended updates are returned
+separately from 401 credential recovery and 403 permission handling.
 
 ## Sibling distributions
 
@@ -137,9 +140,11 @@ Update an existing install with `claude plugin marketplace update hirey`, then `
 |---|---|---|---|
 | Codex | `codex plugin marketplace add hirey-ai/hirey-codex-plugin` | Remote MCP + OAuth (DCR + PKCE) | [hirey-codex-plugin](https://github.com/hirey-ai/hirey-codex-plugin) |
 | Claude Code | `/plugin marketplace add hirey-ai/hirey-claude-plugin` | **Pure skill + REST + client_credentials** | this repo |
-| OpenClaw / npm | `clawhub:hirey` or `npm i -g @hirey/hi-mcp-server` | Local stdio MCP + client_credentials | hirey/openclaw-plugin |
+| Hermes | `curl -fsSL https://hi.hirey.ai/v1/install/hermes.sh \| bash` | Native Python plugin + client_credentials | [hirey-hermes-plugin](https://github.com/hirey-ai/hirey-hermes-plugin) |
+| OpenClaw | `openclaw plugins install clawhub:hirey` | Native in-process plugin | [hi-openclaw-plugin](https://github.com/hirey-ai/hi-openclaw-plugin) |
 
-All three are sibling adapters over the same Hi REST API. Tool names, schemas, and semantics are identical.
+All four use the same canonical `workspace_workflows` operation catalog. Their installation,
+authentication, and host lifecycle differ, so each distribution is versioned and tested separately.
 
 Note: *Claude Code* (the terminal) uses the pure-skill path above. The other Claude surfaces — the **desktop app, claude.ai web, mobile, and Cowork** — use the remote MCP connector at `https://mcp.hirey.ai/mcp` (the same endpoint Codex uses), since the plugin/skill mechanism is Claude-Code-only.
 

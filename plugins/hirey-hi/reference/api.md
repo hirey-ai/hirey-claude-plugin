@@ -102,7 +102,7 @@ The business surface is intentionally narrow:
 Call shape:
 
 ```bash
-curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.workspace-workflows/call" \
+curl -sS --connect-timeout 5 --max-time 30 -X POST "https://hi.hirey.ai/v1/capabilities/hi.workspace-workflows/call" \
   -H "authorization: Bearer $HI_TOKEN" \
   -H 'content-type: application/json' \
   -H 'x-hirey-plugin-host: claude' \
@@ -126,13 +126,13 @@ verified identity. **Default anchor: Sign in with Google** via `hi.google-link`;
 
 ```bash
 # start → returns a verification_url the user opens in a browser to Sign in with Google (valid ~10 min)
-curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
+curl -sS --connect-timeout 5 --max-time 30 -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
   -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
   --data '{"action":"start"}'
 # → { ok, link_id, verification_url, expires_at, instructions }
 
 # poll → repeat until verified; do NOT call start again on each poll (link_id optional)
-curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
+curl -sS --connect-timeout 5 --max-time 30 -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
   -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
   --data '{"action":"poll"}'
 # pending  → { ok, status:"pending" }

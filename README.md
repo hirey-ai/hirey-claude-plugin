@@ -115,7 +115,9 @@ This repo is **automatically mirrored** from the `host-plugins-claude/` director
 
 ## Releases
 
-Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`). The latest release is **`hirey-hi--v0.2.6`** — pure-skill plugin, no MCP.
+Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`).
+The manifest on this branch is **`0.2.6`**; a version is a published release only after its matching
+tag exists.
 
 For the unpinned (default-branch) install:
 
@@ -123,11 +125,8 @@ For the unpinned (default-branch) install:
 /plugin marketplace add hirey-ai/hirey-claude-plugin
 ```
 
-To pin to an exact tag, use the git URL with `#ref`:
-
-```text
-/plugin marketplace add https://github.com/hirey-ai/hirey-claude-plugin.git#hirey-hi--v0.2.6
-```
+To pin to an exact release, use the git URL with `#hirey-hi--vMAJOR.MINOR.PATCH` after verifying
+that the tag exists.
 
 Update every install shape, including curl-installed Skills, with
 `curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash`, followed by `/reload-plugins`.

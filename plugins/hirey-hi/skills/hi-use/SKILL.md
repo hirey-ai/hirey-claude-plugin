@@ -31,6 +31,10 @@ x-hirey-plugin-host: claude
 x-hirey-plugin-version: 0.2.6
 ```
 
+Bound every REST request with `--connect-timeout 5 --max-time 30` (or equivalent client
+timeouts). A slow or unreachable API must fail visibly instead of leaving a C-end request waiting
+without a limit.
+
 The JSON body is the same shape as the tool contract:
 
 ```json
@@ -43,8 +47,19 @@ or:
 {"action":"people.find","payload":{"query":"founder building agent infrastructure"}}
 ```
 
-Read the operation receipt from the response `result`. Do not add a second request when one
-operation already returns the complete result.
+Before reading the operation receipt from `result`, inspect the same response's
+`_meta.hirey_plugin` object. Do not make a separate version-policy request:
+
+- `update_required=true`: surface the required update, run only the returned official
+  `update_command`, reload the plugin/Skills as instructed, and retry the original operation at
+  most once.
+- `update_recommended=true`: tell the user an update is available without blocking the compatible
+  operation result.
+- A 401 is credential recovery and a 403 is a permission/binding decision; neither is an upgrade
+  signal unless `_meta.hirey_plugin` explicitly says so.
+
+Read the operation receipt from `result`. Do not add a second request when one operation already
+returns the complete result.
 
 ## Call discipline
 

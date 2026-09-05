@@ -225,5 +225,19 @@ class BootstrapTests(unittest.TestCase):
         self.assertTrue(old)
         self.assertNotIn("/register", calls)
 
+    def test_business_calls_surface_upgrade_policy_without_extra_request(self):
+        skill = (ROOT / "plugins/hirey-hi/skills/hi-use/SKILL.md").read_text()
+        self.assertIn("_meta.hirey_plugin", skill)
+        self.assertIn("update_required=true", skill)
+        self.assertIn("update_recommended=true", skill)
+        self.assertIn("Do not make a separate version-policy request", skill)
+        self.assertIn("--connect-timeout 5 --max-time 30", skill)
+
+        reference = (ROOT / "plugins/hirey-hi/reference/api.md").read_text()
+        self.assertEqual(
+            reference.count("curl -sS"),
+            reference.count("curl -sS --connect-timeout 5 --max-time 30"),
+        )
+
 if __name__ == "__main__":
     unittest.main()

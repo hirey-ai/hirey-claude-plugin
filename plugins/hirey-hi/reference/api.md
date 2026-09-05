@@ -13,54 +13,37 @@ All endpoints are under `https://hi.hirey.ai` unless otherwise noted.
   "client_id":             "hagc_agit_<12hex>",
   "client_secret":         "<43-char base64url>",
   "agent_id":              "ag_<12hex>",
-  "installation_id":       "agit_<12hex>",
+  "status":                "pending",
   "issuer":                "https://hi.hirey.ai",
   "audience":              "hirey-hi",
   "token_url":             "https://hi.hirey.ai/oauth/token",
   "platform_base_url":     "https://hi.hirey.ai",
-  "access_token":          "<RS256 JWT, ~1KB>",
+  "access_token":          "<pending opaque token or active-session JWT>",
   "access_token_issued_at":   1779432232,
   "access_token_expires_in":  3600
 }
 ```
 
-The `client_id` + `client_secret` pair is long-lived (no expiry advertised today). The `access_token` lives ~1h; refresh it with the cached pair whenever it's within 5 minutes of expiry.
+The `client_id` + `client_secret` pair is long-lived (no expiry advertised today). Use the returned `access_token_expires_in`; refresh it with the cached pair whenever it's within 5 minutes of expiry.
 
 ## Bootstrap endpoints (no auth)
 
-### `POST /v1/agents/register`
+### `POST /v1/agents/api-keys`
 
-Registers a fresh anonymous agent + installation, returns ready-to-use credentials. **No auth required.**
+Creates one pending Agent, backed only by the current Core database. No human Person is created.
+Request: `{"agent_type":"claude","display_name":"Claude Code (Hirey skill)","client_version":"0.2.6"}`.
+Response: `{"api_key":"hi_ak_<base64url>","agent_id":"ag_...","status":"pending"}`.
 
-Request body (everything optional):
+The envelope decodes to `{"v":1,"id":"<client_id>","secret":"<client_secret>"}`.
+Validate the prefix, base64url, JSON version, and nonempty string fields before saving;
+store decoded credentials, not an additional API-key copy. The endpoint does not accept
+referral channel metadata. Report unsupported attribution instead of silently dropping it.
 
-```json
-{
-  "display_name": "Claude Code (Hirey plugin)",
-  "agent_kind":   "external",
-  "metadata":     { "host": "claude-code" }
-}
-```
-
-Response (200):
-
-```json
-{
-  "agent":        { "agent_id": "ag_<12hex>", "display_name": "...", "status": "active", ... },
-  "installation": { "installation_id": "agit_<12hex>", "status": "pending", ... },
-  "auth": {
-    "grant_type": "client_credentials",
-    "client_id":     "hagc_agit_<12hex>",
-    "client_secret": "<base64url>",
-    "issuer":        "https://hi.hirey.ai",
-    "audience":      "hirey-hi",
-    "token_url":     "https://hi.hirey.ai/oauth/token"
-  },
-  "contract": { "version": "v1", "scopes": [...] }
-}
-```
-
-Save everything except `client_secret` and `access_token` indiscriminately; both `client_secret` and (later) `access_token` are secret and need 600 perms on the file containing them.
+This endpoint is not idempotent. Both installer and onboard hold `.register.lock` and persist
+a non-secret `.registration-pending.json` fence before POST. Keep the fence after network,
+HTTP, or malformed-response failures. Never delete it and retry automatically: the request
+may already have created an Agent. Only successful atomic credential persistence removes it.
+Existing credentials are reused, never replaced by a new registration.
 
 ### `POST /oauth/token`
 
@@ -84,14 +67,19 @@ All require `Authorization: Bearer <access_token>`.
 
 ### Installation status
 
-| Endpoint | Purpose | Idempotent? |
-|---|---|---|
-| `GET  /v1/agents/me` | Returns `{agent, installation}` for the current bearer's install. | Read |
-| `GET  /v1/agents/me/installation` | Just the installation portion. | Read |
-| `GET  /v1/agents/me/endpoints` | What delivery endpoints (if any) the install has registered. | Read |
-| `GET  /v1/agents/me/subscriptions` | Topic subscriptions for events. | Read |
+A successful client-credentials token exchange confirms installation authentication.
+Pending credentials receive an opaque `hi_ai_` token, not an active-session JWT.
+Do not call `GET /v1/agents/me` as a pending-install success gate: that route requires an
+active, verified Agent Session. After binding and refreshing, it returns flat
+`account_id/person_id/workspace_id/agent_id/agent_session_id` plus `agent`, not an
+`installation` object.
 
-`installation.status="pending"` is a valid anonymous state: public reads are available immediately. Do not call the retired activation endpoint or treat pending as a failed install. Verified identity binding unlocks private Workspace reads and writes.
+Hold the shared `.register.lock` through freshness re-read and token refresh because refreshing
+a pending token invalidates its previous bearer. Claude and Hermes share this format under
+`${XDG_CONFIG_HOME:-$HOME/.config}/hi/credentials.json`; isolated acceptance must honor XDG.
+After an explicitly consented binding returns verified, use the guarded onboard script with
+`HI_FORCE_TOKEN_REFRESH=1`, then verify the flat identity returned by `/v1/agents/me`.
+Do not trust the historical local installation `status` or JWT shape as proof of login.
 
 ### Capability catalog (the actual Hi tools)
 
@@ -102,52 +90,49 @@ GET  /v1/capabilities/<cap_id>/schema              # JSON Schema for the request
 POST /v1/capabilities/<cap_id>/call                # invoke (Bearer required)
 ```
 
-`<cap_id>` examples (full list comes from `/v1/capabilities`):
+The business surface is intentionally narrow:
 
 | Capability ID | Tool name | What it does |
 |---|---|---|
-| `hi.agent-listings` | `agent_listings` | CRUD on the user's search listings ("I want to find …") |
-| `hi.listing-taxonomy` | `listing_taxonomy` | Read-only taxonomy of `listing_kind` / `subkind` values |
-| `hi.matching-sessions` | `matching_sessions` | Pull the ranked match feed for a listing; mark candidates for contact |
-| `hi.pairings` | `pairings` | Open and continue 1:1 message threads with matched people |
-| `hi.thread-meetings` | `thread_meetings` | Propose / confirm meetings inside a pairing |
-| `hi.agent-credits` | `agent_credits` | Read-only credits balance and ledger |
+| `hi.workspace-workflows` | `workspace_workflows` | Canonical Core operations. Call `action:"catalog"` first. |
 | `hi.google-link` | `google_link` | **Default** owner-identity bind at the write gate — Sign in with Google (`start` → surface `verification_url`, `poll` until `status:"verified"`) |
 | `hi.phone-binding` | `phone_binding` | Fallback owner-identity bind — `bind` (phone) → `verify` (SMS code) |
 | `hi.email-binding` | `email_binding` | Fallback owner-identity bind — `bind` (email) → `verify` (emailed code) |
-| `hi.conversations` | `conversations` | Conversation history surface |
-| `hi.social-org` | `social_org` | Org / company surface |
-| `hi.social-permissions` | `social_permissions` | Permission edges between subjects |
-| `hi.social-relationships` | `social_relationships` | Relationship edges (cofounder, etc.) |
-| `hi.faq-get` / `hi.faq-search` | `faq_get` / `faq_search` | Public FAQ surface |
-| `hi.content-get` / `hi.content-render` | `content_get` / `content_render` | Static + templated content |
 
 Call shape:
 
 ```bash
-curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.agent-listings/call" \
+curl -sS --connect-timeout 5 --max-time 30 -X POST "https://hi.hirey.ai/v1/capabilities/hi.workspace-workflows/call" \
   -H "authorization: Bearer $HI_TOKEN" \
   -H 'content-type: application/json' \
-  --data '{"action":"upsert","text":"need 5 senior Go engineers in San Francisco"}'
+  -H 'x-hirey-plugin-host: claude' \
+  -H 'x-hirey-plugin-version: 0.2.6' \
+  --data '{"action":"people.find","payload":{"query":"senior Go engineers in San Francisco"}}'
 ```
 
-`status` is not accepted on `upsert` (returns `status_not_allowed_in_upsert_use_update_status`). After upsert, open the listing separately: `{"action":"update_status","listing_id":"<from upsert>","status":"open"}`.
+Business inputs always live under `payload`. Write and external-effect operations require a stable
+`idempotency_key`; operations marked `explicit_user_confirmation` also require the exact
+`confirmation` object. The response wraps the Core operation receipt in top-level `result`.
 
-Returns either `{ ok: true, data: {...} }` or `{ error: "...", capability_id, tool_name }`.
+Never call legacy business capability IDs such as `hi.owners`, `hi.agent-listings`,
+`hi.matching-sessions`, `hi.pairings`, or `hi.thread-meetings`; they are not aliases and return 404.
 
 ### Owner-identity binding at the write gate
 
-Reading/searching works on the anonymous bootstrap credentials. The owner identity is bound only when the first WRITE hits the write gate — the capability call returns `phone_binding_required` / `caller_owner_unresolved`. **Default anchor: Sign in with Google** via `hi.google-link`; `hi.phone-binding` and `hi.email-binding` are the fallbacks. All three are write-gate-exempt (callable on the anonymous bearer) and converge to the **same** workspace — the same Google account / phone / email never creates a second one.
+Pending credentials may call only the anonymous operations returned by `workspace_workflows`
+(`people.find`, `people.explain`, and staged `capture.record`). Private Workspace work requires
+verified identity. **Default anchor: Sign in with Google** via `hi.google-link`;
+`hi.phone-binding` and `hi.email-binding` are fallbacks.
 
 ```bash
 # start → returns a verification_url the user opens in a browser to Sign in with Google (valid ~10 min)
-curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
+curl -sS --connect-timeout 5 --max-time 30 -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
   -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
   --data '{"action":"start"}'
 # → { ok, link_id, verification_url, expires_at, instructions }
 
 # poll → repeat until verified; do NOT call start again on each poll (link_id optional)
-curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
+curl -sS --connect-timeout 5 --max-time 30 -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
   -H "authorization: Bearer $HI_TOKEN" -H 'content-type: application/json' \
   --data '{"action":"poll"}'
 # pending  → { ok, status:"pending" }
@@ -157,14 +142,18 @@ curl -sS -X POST "https://hi.hirey.ai/v1/capabilities/hi.google-link/call" \
 
 The `poll` "verified" payload is identical to `hi.phone-binding` / `hi.email-binding` `verify` plus a `status` field. Errors `link_expired` / `link_already_consumed` mean the link is dead — call `start` again for a fresh URL. See the `hi-use` skill's "Binding the owner identity (Google default)" section for the agent-facing flow.
 
-### Event surface
+### Transport event surface
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/v1/agent-events/stream` | GET | Long-poll for inbound events. Query param `timeout_ms` (default 30000, cap ~30s). |
+| `/v1/agent-events/stream` | GET | Transport delivery only; do not use it as the business Inbox. |
 | `/v1/agent-events/claim` | POST | Claim a lease-protected batch. Body `{lease_ms?: 60000, max?: 50}`. |
 | `/v1/agent-events/:eventId` | GET | Fetch a single event's full payload (claim-only). |
-| `/v1/agent-events/ack` | POST | Ack events. Body `{event_ids: [...], lease_id?: "..."}`. |
+| `/v1/agent-events/ack` | POST | Ack transport events. Body `{event_ids: [...], lease_id?: "..."}`. |
+
+For messages, tasks, notifications, and user-visible work, call the canonical
+`agent_message.list` operation through `workspace_workflows`. Listing is read-only and must not
+claim or acknowledge items.
 
 ## Public discovery (no auth)
 
@@ -178,13 +167,14 @@ If you ever need to verify the platform is reachable / which endpoints exist, hi
 
 ## Token lifecycle pitfalls
 
-- The bearer JWT's `sub` is the `installation_id`, NOT `agent_id`. Don't confuse them.
+- Pending `hi_ai_` tokens are opaque. Active JWT `sub` is the canonical Agent ID; `sid` is the Agent Session ID.
 - The `aud` claim is `hirey-hi` (not the platform base URL). Don't try to RFC 8707 audience-bind to `https://hi.hirey.ai/mcp` — that's the MCP endpoint's audience and it's a different code path entirely.
 - `client_credentials` is replay-protected by client_secret confidentiality (kept in `~/.config/hi/credentials.json` at 600 perms). Don't put it in env vars or logs.
-- If you accidentally leak the file: delete it, run `hi-onboard`, you'll get a fresh anonymous identity. The old install becomes orphan (zombie listings remain in Hi but you can no longer act on them).
+- If credentials leak, stop and arrange credential revocation/recovery. Do not delete the identity and silently register a replacement.
 
-## Why no OAuth, no MCP
+## Host transport
 
-The Hi backend treats every installation as an anonymous agent — there is no human user to authenticate. OAuth's role (proving you're the right human) doesn't apply. We use OAuth's `client_credentials` grant purely for machine-to-machine token issuance, which is functionally equivalent to a long-lived API key with rotation hooks. The plugin is pure markdown + Bash because (a) Hi already exposes everything as REST, (b) Claude Code's MCP-over-HTTP auto-trigger is broken upstream ([anthropics/claude-code#36307](https://github.com/anthropics/claude-code/issues/36307)), and (c) MCP added zero value for a remote-only, REST-natural surface.
-
-Codex CLI and OpenClaw still use the MCP path (`hi-mcp-server` is a separate service at `https://mcp.hirey.ai/mcp`, legacy alias `https://hi.hirey.ai/mcp`). That path's identity model (a stable `hi_ak_…` API key by default, per-install DCR + PKCE browser-OAuth as fallback) and this skill's model (per-install client_credentials) both end up minting one anonymous Hi subject per install — same end state, different wire.
+Claude Code uses pure skills plus REST. Normal installation is anonymous; private data and
+writes require explicit verified identity binding. Pending and active credentials converge on
+the same Agent, Person and Workspace through the current backend contract. Do not infer
+active identity from installation alone or substitute Codex credentials for host acceptance.

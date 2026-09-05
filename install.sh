@@ -7,24 +7,25 @@
 # calls — no plugin install, no `/mcp` panel, no browser OAuth.
 #
 # Usage:
-#   curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
+#   curl -fsSL --connect-timeout 5 --max-time 30 https://hi.hirey.ai/v1/install/claude.sh | bash
 #
 # Env overrides:
 #   HI_BASE          — Hi platform base URL (default: https://hi.hirey.ai)
 #   SKILLS_REF       — git ref to pull SKILL.md from (default: master)
 #   SKILLS_DIR       — install destination (default: ~/.claude/skills)
 #   CREDS_DIR        — credentials destination (default: ~/.config/hi)
-#   HI_CHANNEL_CODE  — referrer/invite code from a Hi owner page or invite link;
-#                      stamped onto agents.metadata_json.channel_code so the
-#                      admin panel can attribute this install to whoever sent
-#                      the visitor here. Optional — empty registers anonymously.
+#   HI_CHANNEL_CODE  — unsupported by the current API; a supplied value stops
+#                      fresh registration instead of silently losing attribution.
 #
 # Idempotent: re-running is safe — overwrites skills with the latest
 # pinned ref, keeps credentials file if it's valid (just refreshes token).
 
 set -euo pipefail
+# Credential and temporary files must never be readable by other users.
+umask 077
 
-VERSION="0.2.5"
+VERSION="0.2.6"
+HI_BASE_EXPLICIT="${HI_BASE+x}"
 HI_BASE="${HI_BASE:-https://hi.hirey.ai}"
 SKILLS_DIR="${SKILLS_DIR:-$HOME/.claude/skills}"
 CREDS_DIR="${CREDS_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/hi}"
@@ -66,7 +67,7 @@ if [[ "${HI_FORCE_INSTALL:-0}" != "1" ]] && ! command -v claude >/dev/null 2>&1;
   if command -v hermes >/dev/null 2>&1; then
     fail "Hermes detected in PATH but no 'claude' binary — this is the Claude installer.
    Run instead:
-     curl -fsSL https://hi.hirey.ai/v1/install/hermes.sh | bash
+     curl -fsSL --connect-timeout 5 --max-time 30 https://hi.hirey.ai/v1/install/hermes.sh | bash
    Override with HI_FORCE_INSTALL=1 if you really want the Claude skill shape here."
   fi
   if command -v openclaw >/dev/null 2>&1; then
@@ -87,16 +88,33 @@ step "Installing Hirey Hi skill (v${VERSION}) from ${SKILLS_REPO}@${SKILLS_REF}"
 
 # ─── 1. Drop skill markdown into ~/.claude/skills/ ───────────────────────
 mkdir -p "$SKILLS_DIR"
+STAGE_DIR=$(mktemp -d "$SKILLS_DIR/.hirey-stage.XXXXXX")
+CRED_TMP=""
+LOCK_OWNED=0
+cleanup() {
+  [ -z "$CRED_TMP" ] || rm -f "$CRED_TMP"
+  rm -rf "$STAGE_DIR"
+  if [ "$LOCK_OWNED" = 1 ]; then rmdir "$LOCK_DIR" 2>/dev/null || true; fi
+}
+trap cleanup EXIT
 for name in hi-onboard hi-use hi-events hi-repair; do
-  mkdir -p "$SKILLS_DIR/$name"
-  curl -fsSL "$RAW_BASE/skills/$name/SKILL.md" -o "$SKILLS_DIR/$name/SKILL.md" \
+  mkdir -p "$STAGE_DIR/$name"
+  curl -fsSL --connect-timeout 5 --max-time 30 "$RAW_BASE/skills/$name/SKILL.md" -o "$STAGE_DIR/$name/SKILL.md" \
     || fail "Failed to download $name SKILL.md"
 done
 
 # Reference doc that the skills link to (lazy-loaded by Claude).
+mkdir -p "$STAGE_DIR/hi-onboard/reference"
+curl -fsSL --connect-timeout 5 --max-time 30 "$RAW_BASE/reference/api.md" -o "$STAGE_DIR/hi-onboard/reference/api.md" \
+  || fail "Failed to download reference doc; installed skills unchanged"
+
+# Download every file before replacing any installed skill.
+for name in hi-onboard hi-use hi-events hi-repair; do
+  mkdir -p "$SKILLS_DIR/$name"
+  mv "$STAGE_DIR/$name/SKILL.md" "$SKILLS_DIR/$name/SKILL.md"
+done
 mkdir -p "$SKILLS_DIR/hi-onboard/reference"
-curl -fsSL "$RAW_BASE/reference/api.md" -o "$SKILLS_DIR/hi-onboard/reference/api.md" \
-  || printf "${DIM}  (skipped optional reference doc — not fatal)${NC}\n"
+mv "$STAGE_DIR/hi-onboard/reference/api.md" "$SKILLS_DIR/hi-onboard/reference/api.md"
 
 ok "Skills installed at $SKILLS_DIR"
 printf "    ${DIM}- hi-onboard, hi-use, hi-events, hi-repair${NC}\n"
@@ -104,9 +122,30 @@ printf "    ${DIM}- hi-onboard, hi-use, hi-events, hi-repair${NC}\n"
 # ─── 2. Bootstrap anonymous identity if not already set up ───────────────
 step "Bootstrapping anonymous Hi identity"
 mkdir -p "$CREDS_DIR" && chmod 700 "$CREDS_DIR"
+LOCK_DIR="$CREDS_DIR/.register.lock"
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  if mkdir "$LOCK_DIR" 2>/dev/null; then LOCK_OWNED=1; break; fi
+  sleep 1
+done
+[ "$LOCK_OWNED" = 1 ] || fail "hi_register_busy: installation or token refresh is already running"
+# Keep the same lock through credential re-read and token refresh: refreshing a
+# pending token invalidates the previous bearer for this shared installation.
+HI_BASE="${HI_BASE%/}"
+if [ -s "$CREDS_FILE" ]; then
+  STORED_BASE=$(jq -er '.platform_base_url // empty | select(type == "string" and length > 0)' "$CREDS_FILE" 2>/dev/null || true)
+  if [ -n "$STORED_BASE" ]; then
+    STORED_BASE="${STORED_BASE%/}"
+    if [ -n "$HI_BASE_EXPLICIT" ] && [ "$HI_BASE" != "$STORED_BASE" ]; then
+      fail "hi_credential_host_mismatch: explicit HI_BASE differs from stored credential host; no credential request sent"
+    fi
+    HI_BASE="$STORED_BASE"
+  fi
+fi
+printf '%s' "$HI_BASE" | jq -Re 'test("^https://[A-Za-z0-9.-]+(:[0-9]+)?$|^http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?$")' >/dev/null 2>&1 \
+  || fail "hi_credential_host_insecure: use HTTPS or explicit loopback HTTP only"
 
 # Helper: does the creds file already hold a usable client_id?
-creds_have_client_id() { [ -s "$CREDS_FILE" ] && [ -n "$(jq -er '.client_id // empty' "$CREDS_FILE" 2>/dev/null)" ]; }
+creds_have_client_id() { [ -s "$CREDS_FILE" ] && [ -n "$(jq -er 'select((.client_id | type == "string" and length > 0) and (.client_secret | type == "string" and length > 0)) | .client_id' "$CREDS_FILE" 2>/dev/null)" ]; }
 
 # CRITICAL (identity durability): re-registering when a creds file EXISTS but is merely
 # unreadable / corrupt / wrong-HOME silently mints a NEW Hi agent and ORPHANS the user's
@@ -128,48 +167,45 @@ fi
 if ! [ -e "$CREDS_FILE" ]; then
   # Serialize concurrent installers: two Claude sessions racing on a fresh machine would
   # otherwise each mint a separate agent. mkdir is an atomic cross-process mutex.
-  LOCK_DIR="$CREDS_DIR/.register.lock"
-  if mkdir "$LOCK_DIR" 2>/dev/null; then
-    trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
-  else
-    # Another installer holds the lock — wait briefly for it to write valid creds.
-    for _ in 1 2 3 4 5 6 7 8 9 10; do sleep 1; creds_have_client_id && break; done
-  fi
-
   if creds_have_client_id; then
     ok "Existing credentials at $CREDS_FILE — keeping agent_id=$(jq -r .agent_id "$CREDS_FILE")"
   else
-    # Build register body. If HI_CHANNEL_CODE is set, fold it into metadata for
-    # owner-page / invite-link attribution. Empty env → no metadata field, register
-    # stays fully anonymous like before. jq builds the JSON safely (no shell escaping bugs).
-    REG_BODY=$(jq -n --arg channel "${HI_CHANNEL_CODE:-}" '
-      {
-        display_name: "Claude Code (Hirey skill)",
-        agent_kind: "external"
-      } + (if ($channel | length) > 0 then { metadata: { channel_code: $channel } } else {} end)
-    ')
-    REG=$(curl -fsS -X POST "$HI_BASE/v1/agents/register" \
+    [ ! -e "$CREDS_DIR/.registration-pending.json" ] || fail "hi_registration_outcome_unknown: preserve pending marker and reconcile the previous attempt; do not register again"
+    [ -z "${HI_CHANNEL_CODE:-}" ] || fail "hi_channel_attribution_unsupported: current installation API does not accept referral metadata"
+    # The server does not provide registration idempotency. Persist a non-secret
+    # fence BEFORE sending; an ambiguous response must never mint another Agent.
+    printf '%s\n' '{"status":"outcome_unknown","host":"claude"}' > "$CREDS_DIR/.registration-pending.json"
+    REG_BODY=$(jq -n --arg version "$VERSION" '{agent_type:"claude",display_name:"Claude Code (Hirey skill)",client_version:$version}')
+    REG=$(curl -fsS --connect-timeout 5 --max-time 30 -X POST "$HI_BASE/v1/agents/api-keys" \
       -H 'content-type: application/json' \
       --data "$REG_BODY") \
-      || fail "Failed to register anonymous agent at $HI_BASE/v1/agents/register"
+      || fail "hi_registration_outcome_unknown: API-key creation failed; preserve pending marker and reconcile before retry"
 
-    printf '%s' "$REG" | jq --arg base "$HI_BASE" '{
-      client_id:          .auth.client_id,
-      client_secret:      .auth.client_secret,
-      agent_id:           .agent.agent_id,
-      installation_id:    .installation.installation_id,
-      issuer:             .auth.issuer,
-      audience:           .auth.audience,
-      token_url:          .auth.token_url,
+    printf '%s' "$REG" | jq -e '
+      (.error == null) and (.agent_id | type == "string" and length > 0) and .status == "pending"
+      and (.api_key | type == "string" and test("^hi_ak_[A-Za-z0-9_-]+$"))
+    ' >/dev/null 2>&1 || { echo "hi_register_failed: invalid registration response; credentials unchanged" >&2; exit 1; }
+    CRED_TMP=$(mktemp "$CREDS_DIR/.credentials.XXXXXX")
+    printf '%s' "$REG" | jq -e --arg base "$HI_BASE" '
+      (.api_key | ltrimstr("hi_ak_") | gsub("-";"+") | gsub("_";"/") | @base64d | fromjson) as $key
+      | if ($key.v != 1 or ($key.id | type != "string" or length == 0) or ($key.secret | type != "string" or length == 0)) then error("invalid key") else {
+      client_id:          $key.id,
+      client_secret:      $key.secret,
+      agent_id:           .agent_id,
+      status: .status,
+      issuer:             $base,
+      audience:           "hirey-hi",
+      token_url:          ($base + "/oauth/token"),
       platform_base_url:  $base,
       access_token:           null,
       access_token_issued_at: 0,
       access_token_expires_in: 0
-    }' > "$CREDS_FILE"
-    chmod 600 "$CREDS_FILE"
+    } end' > "$CRED_TMP" 2>/dev/null || fail "hi_register_failed: invalid credential envelope; reconcile pending attempt"
+    mv "$CRED_TMP" "$CREDS_FILE"
+    CRED_TMP=""
+    rm -f "$CREDS_DIR/.registration-pending.json"
     ok "Anonymous agent registered: $(jq -r .agent_id "$CREDS_FILE")"
   fi
-  rmdir "$LOCK_DIR" 2>/dev/null || true
 else
   ok "Existing credentials at $CREDS_FILE — keeping agent_id=$(jq -r .agent_id "$CREDS_FILE")"
 fi
@@ -180,20 +216,24 @@ ISSUED_AT=$(jq '.access_token_issued_at // 0' "$CREDS_FILE")
 EXPIRES_IN=$(jq '.access_token_expires_in // 0' "$CREDS_FILE")
 EXP_AT=$(( ISSUED_AT + EXPIRES_IN - 300 ))
 
-if [ "$NOW" -ge "$EXP_AT" ]; then
+if [ "${HI_FORCE_TOKEN_REFRESH:-0}" = 1 ] || [ "$NOW" -ge "$EXP_AT" ]; then
   CID=$(jq -r .client_id "$CREDS_FILE")
   CSEC=$(jq -r .client_secret "$CREDS_FILE")
   AUD=$(jq -r .audience "$CREDS_FILE")
-  TOK=$(curl -fsS -X POST "$HI_BASE/oauth/token" \
-    --data "grant_type=client_credentials&client_id=$CID&client_secret=$CSEC&audience=$AUD") \
+  TOK=$(curl -fsS --connect-timeout 5 --max-time 30 -X POST "$HI_BASE/oauth/token" \
+    --data-urlencode "grant_type=client_credentials" \
+    --data-urlencode "client_id=$CID" --data-urlencode "client_secret=$CSEC" --data-urlencode "audience=$AUD") \
     || fail "Token endpoint unreachable"
-  [ -n "$(printf '%s' "$TOK" | jq -r '.access_token // empty')" ] \
-    || fail "Token endpoint returned no access_token: $TOK"
+  printf '%s' "$TOK" | jq -e '(.access_token | type == "string" and length > 0) and (.expires_in | type == "number" and . > 0)' >/dev/null 2>&1 \
+    || fail "hi_token_refresh_failed: invalid token response; existing credentials preserved"
+  CRED_TMP=$(mktemp "$CREDS_DIR/.credentials.XXXXXX")
   jq --argjson tok "$TOK" --arg now "$NOW" '
     .access_token            = $tok.access_token
     | .access_token_issued_at  = ($now | tonumber)
     | .access_token_expires_in = $tok.expires_in
-  ' "$CREDS_FILE" > "$CREDS_FILE.tmp.$$" && mv "$CREDS_FILE.tmp.$$" "$CREDS_FILE" && chmod 600 "$CREDS_FILE"
+  ' "$CREDS_FILE" > "$CRED_TMP"
+  mv "$CRED_TMP" "$CREDS_FILE"
+  CRED_TMP=""
   ok "Access token refreshed (expires in $(jq -r .access_token_expires_in "$CREDS_FILE")s)"
 else
   ok "Cached token still valid"
@@ -205,7 +245,7 @@ AGENT_ID=$(jq -r .agent_id "$CREDS_FILE")
 echo
 printf "${GREEN}✓${NC} Hirey Hi is ready (agent_id=${GREEN}%s${NC})\n" "$AGENT_ID"
 echo
-echo "  Skills installed at: $SKILLS_DIR/hi-{onboard,use,events}/"
+echo "  Skills installed at: $SKILLS_DIR/hi-{onboard,use,events,repair}/"
 echo "  Credentials at:      $CREDS_FILE (mode 600)"
 echo
 echo "  Now ask Claude things like:"

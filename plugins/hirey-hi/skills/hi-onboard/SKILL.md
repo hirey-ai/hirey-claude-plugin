@@ -26,7 +26,7 @@ Hi is Hirey's people-to-people platform. This plugin gives Claude direct REST ac
 At the start of setup or recovery, call the public catalog with the installed plugin version:
 
 ```bash
-curl -sS https://hi.hirey.ai/v1/capabilities \
+curl -fsS --connect-timeout 5 --max-time 30 https://hi.hirey.ai/v1/capabilities \
   -H 'x-hirey-plugin-host: claude' \
   -H 'x-hirey-plugin-version: 0.2.6' \
   | jq '._meta.hirey_plugin'
@@ -47,9 +47,19 @@ Run the script below verbatim. It is idempotent: if `credentials.json` already e
 
 ```bash
 set -euo pipefail
+# Credential and temporary files must never be readable by other users.
+umask 077
 HI_CRED_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hi"
 HI_CRED_FILE="$HI_CRED_DIR/credentials.json"
-HI_BASE="https://hi.hirey.ai"
+HI_BASE="${HI_BASE:-https://hi.hirey.ai}"
+CRED_TMP=""
+LOCK_OWNED=0
+LOCK_DIR="$HI_CRED_DIR/.register.lock"
+cleanup() {
+  [ -z "$CRED_TMP" ] || rm -f "$CRED_TMP"
+  if [ "$LOCK_OWNED" = 1 ]; then rmdir "$LOCK_DIR" 2>/dev/null || true; fi
+}
+trap cleanup EXIT
 
 mkdir -p "$HI_CRED_DIR"
 chmod 700 "$HI_CRED_DIR"
@@ -68,9 +78,16 @@ if [ -e "$HI_CRED_FILE" ] && ! [ -r "$HI_CRED_FILE" ]; then
   echo "ERROR: $HI_CRED_FILE exists but is unreadable. NOT registering a new identity (would orphan your Hi agent + data). Fix: chmod 600 \"$HI_CRED_FILE\" (or rm it to deliberately start fresh), then retry." >&2
   exit 1
 fi
-if [ -e "$HI_CRED_FILE" ] && [ -z "$(jq -er '.client_id // empty' "$HI_CRED_FILE" 2>/dev/null)" ]; then
+if [ -e "$HI_CRED_FILE" ] && [ -z "$(jq -er 'select((.client_id | type == "string" and length > 0) and (.client_secret | type == "string" and length > 0)) | .client_id' "$HI_CRED_FILE" 2>/dev/null)" ]; then
   echo "ERROR: $HI_CRED_FILE exists but has no valid client_id (corrupt/empty). NOT silently registering a new identity (would orphan your Hi agent + data). If junk: rm \"$HI_CRED_FILE\" then retry; otherwise restore from backup." >&2
   exit 1
+fi
+if [ ! -e "$HI_CRED_FILE" ]; then
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    echo "hi_register_busy: another installation is running; retry after it finishes" >&2
+    exit 1
+  fi
+  LOCK_OWNED=1
 fi
 if [ ! -e "$HI_CRED_FILE" ]; then
   # Substitute the channel_code value verbatim if you saw one in the user prompt; otherwise
@@ -81,10 +98,15 @@ if [ ! -e "$HI_CRED_FILE" ]; then
       agent_kind: "external"
     } + (if ($channel | length) > 0 then { metadata: { channel_code: $channel } } else {} end)
   ')
-  REG=$(curl -sS -X POST "$HI_BASE/v1/agents/register" \
+  REG=$(curl -fsS --connect-timeout 5 --max-time 30 -X POST "$HI_BASE/v1/agents/register" \
     -H 'content-type: application/json' \
     --data "$REG_BODY")
-  echo "$REG" | jq '{
+  printf '%s' "$REG" | jq -e '
+      (.error == null) and ([.auth.client_id, .auth.client_secret, .agent.agent_id, .installation.installation_id, .auth.audience]
+      | all(.[]; type == "string" and length > 0))
+    ' >/dev/null 2>&1 || { echo "hi_register_failed: invalid registration response; credentials unchanged" >&2; exit 1; }
+  CRED_TMP=$(mktemp "$HI_CRED_DIR/.credentials.XXXXXX")
+  printf '%s' "$REG" | jq --arg base "$HI_BASE" '{
     client_id: .auth.client_id,
     client_secret: .auth.client_secret,
     agent_id: .agent.agent_id,
@@ -92,12 +114,13 @@ if [ ! -e "$HI_CRED_FILE" ]; then
     issuer: .auth.issuer,
     audience: .auth.audience,
     token_url: .auth.token_url,
-    platform_base_url: "'"$HI_BASE"'",
+    platform_base_url: $base,
     access_token: null,
     access_token_issued_at: 0,
     access_token_expires_in: 0
-  }' > "$HI_CRED_FILE"
-  chmod 600 "$HI_CRED_FILE"
+  }' > "$CRED_TMP"
+  mv "$CRED_TMP" "$HI_CRED_FILE"
+  CRED_TMP=""
 fi
 
 # 2) Refresh the access_token if missing or close to expiry (5-min skew).
@@ -107,27 +130,31 @@ if [ "$NOW" -ge "$EXP_AT" ]; then
   CID=$(jq -r '.client_id' "$HI_CRED_FILE")
   CSEC=$(jq -r '.client_secret' "$HI_CRED_FILE")
   AUD=$(jq -r '.audience' "$HI_CRED_FILE")
-  TOK=$(curl -sS -X POST "$HI_BASE/oauth/token" \
-    --data "grant_type=client_credentials&client_id=$CID&client_secret=$CSEC&audience=$AUD")
-  if [ -z "$(echo "$TOK" | jq -r '.access_token // empty')" ]; then
-    echo "hi_token_refresh_failed: $TOK" >&2
+  TOK=$(curl -fsS --connect-timeout 5 --max-time 30 -X POST "$HI_BASE/oauth/token" \
+    --data-urlencode "grant_type=client_credentials" \
+    --data-urlencode "client_id=$CID" --data-urlencode "client_secret=$CSEC" --data-urlencode "audience=$AUD")
+  if ! printf '%s' "$TOK" | jq -e '(.access_token | type == "string" and length > 0) and (.expires_in | type == "number" and . > 0)' >/dev/null 2>&1; then
+    echo "hi_token_refresh_failed: invalid token response; existing credentials preserved" >&2
     exit 1
   fi
+  CRED_TMP=$(mktemp "$HI_CRED_DIR/.credentials.XXXXXX")
   jq --argjson tok "$TOK" --arg now "$NOW" '
     .access_token = $tok.access_token
     | .access_token_issued_at = ($now | tonumber)
     | .access_token_expires_in = $tok.expires_in
-  ' "$HI_CRED_FILE" > "$HI_CRED_FILE.tmp.$$" && mv "$HI_CRED_FILE.tmp.$$" "$HI_CRED_FILE" && chmod 600 "$HI_CRED_FILE"
+  ' "$HI_CRED_FILE" > "$CRED_TMP"
+  mv "$CRED_TMP" "$HI_CRED_FILE"
+  CRED_TMP=""
 fi
 
 # 3) Confirm the installation credential. A pending Agent is intentionally usable
 # for anonymous public reads; do not call the retired activation endpoint.
 TOKEN=$(jq -r '.access_token' "$HI_CRED_FILE")
-ME=$(curl -sS "$HI_BASE/v1/agents/me" -H "authorization: Bearer $TOKEN")
+ME=$(curl -fsS --connect-timeout 5 --max-time 30 "$HI_BASE/v1/agents/me" -H "authorization: Bearer $TOKEN")
 echo "$ME" | jq '{agent_id: .agent.agent_id, status: .agent.status, installation_id: .installation.installation_id, installation_status: .installation.status}'
 ```
 
-If any step exits non-zero or returns `error` JSON, report the error to the user verbatim and stop. Common errors:
+If any step exits non-zero or returns `error` JSON, report the failed step and safe error code, without printing raw responses or credentials, and stop. Common errors:
 
 - `agent_register_failed` — Hi platform is unreachable. Network issue, not a plugin issue. Surface the message and stop.
 - `hi_auth_client_register_failed:*` — hi-auth service is down. Surface and stop.

@@ -13,54 +13,37 @@ All endpoints are under `https://hi.hirey.ai` unless otherwise noted.
   "client_id":             "hagc_agit_<12hex>",
   "client_secret":         "<43-char base64url>",
   "agent_id":              "ag_<12hex>",
-  "installation_id":       "agit_<12hex>",
+  "status":                "pending",
   "issuer":                "https://hi.hirey.ai",
   "audience":              "hirey-hi",
   "token_url":             "https://hi.hirey.ai/oauth/token",
   "platform_base_url":     "https://hi.hirey.ai",
-  "access_token":          "<RS256 JWT, ~1KB>",
+  "access_token":          "<pending opaque token or active-session JWT>",
   "access_token_issued_at":   1779432232,
   "access_token_expires_in":  3600
 }
 ```
 
-The `client_id` + `client_secret` pair is long-lived (no expiry advertised today). The `access_token` lives ~1h; refresh it with the cached pair whenever it's within 5 minutes of expiry.
+The `client_id` + `client_secret` pair is long-lived (no expiry advertised today). Use the returned `access_token_expires_in`; refresh it with the cached pair whenever it's within 5 minutes of expiry.
 
 ## Bootstrap endpoints (no auth)
 
-### `POST /v1/agents/register`
+### `POST /v1/agents/api-keys`
 
-Registers a fresh anonymous agent + installation, returns ready-to-use credentials. **No auth required.**
+Creates one pending Agent, backed only by the current Core database. No human Person is created.
+Request: `{"agent_type":"claude","display_name":"Claude Code (Hirey skill)","client_version":"0.2.6"}`.
+Response: `{"api_key":"hi_ak_<base64url>","agent_id":"ag_...","status":"pending"}`.
 
-Request body (everything optional):
+The envelope decodes to `{"v":1,"id":"<client_id>","secret":"<client_secret>"}`.
+Validate the prefix, base64url, JSON version, and nonempty string fields before saving;
+store decoded credentials, not an additional API-key copy. The endpoint does not accept
+referral channel metadata. Report unsupported attribution instead of silently dropping it.
 
-```json
-{
-  "display_name": "Claude Code (Hirey plugin)",
-  "agent_kind":   "external",
-  "metadata":     { "host": "claude-code" }
-}
-```
-
-Response (200):
-
-```json
-{
-  "agent":        { "agent_id": "ag_<12hex>", "display_name": "...", "status": "active", ... },
-  "installation": { "installation_id": "agit_<12hex>", "status": "pending", ... },
-  "auth": {
-    "grant_type": "client_credentials",
-    "client_id":     "hagc_agit_<12hex>",
-    "client_secret": "<base64url>",
-    "issuer":        "https://hi.hirey.ai",
-    "audience":      "hirey-hi",
-    "token_url":     "https://hi.hirey.ai/oauth/token"
-  },
-  "contract": { "version": "v1", "scopes": [...] }
-}
-```
-
-Save everything except `client_secret` and `access_token` indiscriminately; both `client_secret` and (later) `access_token` are secret and need 600 perms on the file containing them.
+This endpoint is not idempotent. Both installer and onboard hold `.register.lock` and persist
+a non-secret `.registration-pending.json` fence before POST. Keep the fence after network,
+HTTP, or malformed-response failures. Never delete it and retry automatically: the request
+may already have created an Agent. Only successful atomic credential persistence removes it.
+Existing credentials are reused, never replaced by a new registration.
 
 ### `POST /oauth/token`
 
@@ -84,14 +67,19 @@ All require `Authorization: Bearer <access_token>`.
 
 ### Installation status
 
-| Endpoint | Purpose | Idempotent? |
-|---|---|---|
-| `GET  /v1/agents/me` | Returns `{agent, installation}` for the current bearer's install. | Read |
-| `GET  /v1/agents/me/installation` | Just the installation portion. | Read |
-| `GET  /v1/agents/me/endpoints` | What delivery endpoints (if any) the install has registered. | Read |
-| `GET  /v1/agents/me/subscriptions` | Topic subscriptions for events. | Read |
+A successful client-credentials token exchange confirms installation authentication.
+Pending credentials receive an opaque `hi_ai_` token, not an active-session JWT.
+Do not call `GET /v1/agents/me` as a pending-install success gate: that route requires an
+active, verified Agent Session. After binding and refreshing, it returns flat
+`account_id/person_id/workspace_id/agent_id/agent_session_id` plus `agent`, not an
+`installation` object.
 
-`installation.status="pending"` is a valid anonymous state: public reads are available immediately. Do not call the retired activation endpoint or treat pending as a failed install. Verified identity binding unlocks private Workspace reads and writes.
+Hold the shared `.register.lock` through freshness re-read and token refresh because refreshing
+a pending token invalidates its previous bearer. Claude and Hermes share this format under
+`${XDG_CONFIG_HOME:-$HOME/.config}/hi/credentials.json`; isolated acceptance must honor XDG.
+After an explicitly consented binding returns verified, use the guarded onboard script with
+`HI_FORCE_TOKEN_REFRESH=1`, then verify the flat identity returned by `/v1/agents/me`.
+Do not trust the historical local installation `status` or JWT shape as proof of login.
 
 ### Capability catalog (the actual Hi tools)
 
@@ -179,13 +167,14 @@ If you ever need to verify the platform is reachable / which endpoints exist, hi
 
 ## Token lifecycle pitfalls
 
-- The bearer JWT's `sub` is the `installation_id`, NOT `agent_id`. Don't confuse them.
+- Pending `hi_ai_` tokens are opaque. Active JWT `sub` is the canonical Agent ID; `sid` is the Agent Session ID.
 - The `aud` claim is `hirey-hi` (not the platform base URL). Don't try to RFC 8707 audience-bind to `https://hi.hirey.ai/mcp` — that's the MCP endpoint's audience and it's a different code path entirely.
 - `client_credentials` is replay-protected by client_secret confidentiality (kept in `~/.config/hi/credentials.json` at 600 perms). Don't put it in env vars or logs.
-- If you accidentally leak the file: delete it, run `hi-onboard`, you'll get a fresh anonymous identity. The old install becomes orphan (zombie listings remain in Hi but you can no longer act on them).
+- If credentials leak, stop and arrange credential revocation/recovery. Do not delete the identity and silently register a replacement.
 
-## Why no OAuth, no MCP
+## Host transport
 
-The Hi backend treats every installation as an anonymous agent — there is no human user to authenticate. OAuth's role (proving you're the right human) doesn't apply. We use OAuth's `client_credentials` grant purely for machine-to-machine token issuance, which is functionally equivalent to a long-lived API key with rotation hooks. The plugin is pure markdown + Bash because (a) Hi already exposes everything as REST, (b) Claude Code's MCP-over-HTTP auto-trigger is broken upstream ([anthropics/claude-code#36307](https://github.com/anthropics/claude-code/issues/36307)), and (c) MCP added zero value for a remote-only, REST-natural surface.
-
-Codex CLI and OpenClaw still use the MCP path (`hi-mcp-server` is a separate service at `https://mcp.hirey.ai/mcp`, legacy alias `https://hi.hirey.ai/mcp`). That path's identity model (a stable `hi_ak_…` API key by default, per-install DCR + PKCE browser-OAuth as fallback) and this skill's model (per-install client_credentials) both end up minting one anonymous Hi subject per install — same end state, different wire.
+Claude Code uses pure skills plus REST. Normal installation is anonymous; private data and
+writes require explicit verified identity binding. Pending and active credentials converge on
+the same Agent, Person and Workspace through the current backend contract. Do not infer
+active identity from installation alone or substitute Codex credentials for host acceptance.

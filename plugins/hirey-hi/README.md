@@ -10,7 +10,7 @@ Claude Code plugin that gives Claude direct access to the Hi people-to-people pl
 curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
 ```
 
-That's it. The script drops `hi-onboard`, `hi-use`, `hi-events`, and `hi-repair` into `~/.claude/skills/`, registers an anonymous Hi agent, and caches a long-lived bearer at `~/.config/hi/credentials.json`. Claude Code [picks up new skills live](https://code.claude.com/docs/en/skills#live-change-detection) — no restart needed.
+The script drops `hi-onboard`, `hi-use`, `hi-events`, and `hi-repair` into `~/.claude/skills/`, creates one pending Hi Agent, and stores durable client credentials plus an expiring cached bearer at `${XDG_CONFIG_HOME:-$HOME/.config}/hi/credentials.json`. Claude Code [picks up new skills live](https://code.claude.com/docs/en/skills#live-change-detection) — no restart needed.
 
 Once it finishes, just talk to Claude: "find me 10 backend engineers in San Francisco", "reach out to candidates from yesterday", "schedule a Zoom with Alex". The assistant uses Hi's tools directly.
 
@@ -29,8 +29,10 @@ Use this if you want the `/plugin` manager UX. The `curl` install above is recom
 
 ```
 Step 1 (first use only — assistant runs via Bash, no user touch):
-  curl -X POST https://hi.hirey.ai/v1/agents/register
-    → { agent_id, installation_id, client_id, client_secret, token_url, ... }
+  # Use the guarded installer/onboard script; do not issue raw non-idempotent registration.
+  # POST https://hi.hirey.ai/v1/agents/api-keys
+    → { agent_id, status: "pending", api_key: "hi_ak_<version-1 envelope>" }
+    → strictly decode client_id/client_secret; atomic private credential file
   curl -X POST https://hi.hirey.ai/oauth/token (grant_type=client_credentials)
     → { access_token, expires_in: 3600 }
   → write everything to ~/.config/hi/credentials.json (mode 600)

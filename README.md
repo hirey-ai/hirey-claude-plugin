@@ -83,7 +83,7 @@ https://hi.hirey.ai/v1/*          (hi-platform REST API)
 ```
 
 - **Pure-skill plugin** — no MCP server, no Node daemon, no `npm install`, no `.mcp.json`. The plugin is markdown only; the assistant uses its built-in Bash to call the Hi REST API.
-- **Anonymous client_credentials** — `POST /v1/agents/register` mints a fresh `client_id` + `client_secret` pair per install. No browser, no PKCE, no `/mcp`. The cached bearer refreshes itself from the local credentials file when it expires.
+- **Anonymous client_credentials** — `POST /v1/agents/api-keys` returns a pending Agent plus a version-1 `hi_ak_` envelope; the installer strictly decodes its client credentials and stores them once. No browser, no PKCE, no `/mcp`. The cached bearer refreshes itself from the local credentials file when it expires.
 - **Per-install Agent** — every Claude Code machine starts with a pending Agent. Anonymous public reads remain available; verified Google, email, or phone login attaches that Agent to the user's existing Workspace for private data and writes.
 
 ## Privacy & scope

@@ -12,8 +12,14 @@ capabilities such as `hi.owners`, `hi.agent-listings`, `hi.matching-sessions`, `
 
 ## REST adapter
 
-Use the existing credential from `~/.config/hi/credentials.json`. Never print its access token,
+Use the existing credential from `${XDG_CONFIG_HOME:-$HOME/.config}/hi/credentials.json`. Never print its access token,
 client secret, or the credential file. If the bearer is missing or expired, follow `hi-onboard`.
+Never read a different host's credentials or fall back to the default directory when XDG is set.
+Use the stored `platform_base_url` for the request destination; the production URL below is
+only the default for a new installation. Reject an explicit `HI_BASE` mismatch before sending
+credentials. Only HTTPS or explicit loopback HTTP is supported.
+Onboard holds the shared `.register.lock` while re-reading and refreshing credentials; do not
+implement a separate unlocked refresh because pending-token refresh invalidates the old bearer.
 
 For every business call, send exactly one request to:
 

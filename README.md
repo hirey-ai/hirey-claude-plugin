@@ -1,6 +1,6 @@
 # Hirey for Claude Code
 
-The official Claude Code marketplace for [Hirey Hi](https://hi.hirey.ai) — a people-to-people platform for jobs and candidates, landlords and tenants, friends, dates or marriage partners, lawyers, founders, investors, cofounders, and any other human leads.
+The official Claude Code marketplace for [HiRey](https://hi.hirey.ai): the people you meet, their Pages, your Needs, messages, introductions and meetings, from Claude.
 
 ## Install
 
@@ -10,149 +10,83 @@ The official Claude Code marketplace for [Hirey Hi](https://hi.hirey.ai) — a p
 curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash
 ```
 
-The script drops four SKILL.md files into `~/.claude/skills/` and bootstraps an anonymous Hi agent identity at `~/.config/hi/credentials.json`. Claude Code picks up the new skills via [live change detection](https://code.claude.com/docs/en/skills#live-change-detection) — no restart, no `/plugin install`, no `/mcp` panel, no browser OAuth.
-
-After it finishes, just talk to Claude:
-
-> *"find me 10 backend engineers in San Francisco"*
-> *"post a listing for a cofounder in fintech, equity-only"*
-> *"reach out to the top three from yesterday's matches"*
-> *"schedule a 30-min Zoom with Alex next Wednesday"*
-> *"any replies?"*
-
-The assistant calls Hi's REST API directly under the hood — see [`plugins/hirey-hi/reference/api.md`](./plugins/hirey-hi/reference/api.md) for the endpoint inventory.
-
-### Alternative: Claude Code plugin marketplace
-
-If you prefer the plugin manager UX (browse in `/plugin`, version-pin via marketplace tags), the same skills are also published as a Claude Code plugin:
+Or inside Claude Code:
 
 ```text
 /plugin marketplace add hirey-ai/hirey-claude-plugin
 /plugin install hirey-hi@hirey
 ```
 
-Note: Claude Code may install plugins in a disabled state requiring `claude plugin enable hirey-hi@hirey` and a `/reload-plugins` (or restart) — known friction from Claude Code's third-party plugin policy. The `curl` install above sidesteps this.
+Then sign in to HiRey once (opens your browser):
+
+```bash
+claude mcp login plugin:hirey-hi:hi
+```
+
+or run `/mcp` inside Claude Code, and restart Claude Code. After that, just talk to Claude:
+
+> *"who did I meet this week?"*
+> *"build Pages for the people I met at the conference"*
+> *"find me a fintech cofounder in San Francisco"*
+> *"any replies?"*
+
+### Moving from the earlier REST installer (0.2.x)
+
+Run the install line above. It moves the earlier skills out of `~/.claude/skills/hi-{onboard,use,events,repair}` into `~/.claude/skills/.hirey-legacy-<time>/` (nothing is deleted) and installs the plugin. The earlier anonymous identity file is left as it is; the plugin signs in with your HiRey account instead.
 
 ## On the Claude desktop app, claude.ai web, mobile & Cowork
 
-The install above is for **Claude Code** (the terminal). If you use Claude in the **desktop app**, on **claude.ai** in a browser, in **Cowork**, or on your **phone**, add Hi as a remote MCP connector instead — no terminal, no install script:
+The install above is for **Claude Code**. In the **desktop app**, on **claude.ai**, in **Cowork** or on your **phone**, add HiRey as a remote MCP connector instead:
 
 1. Open **Settings → Connectors → Add custom connector**
-2. Name it **Hi** and paste the URL: `https://mcp.hirey.ai/mcp`
-3. Click **Add** and complete the one-time OAuth sign-in
-
-One add syncs across your Anthropic account — the desktop app, the web, and the Claude mobile app (iOS/Android) all pick it up. You **can't** add a connector from the phone, so add it once on the web or desktop and it appears in the app on your next sign-in. Free plan: one custom connector total; Team/Enterprise: a workspace Owner adds it once under Organization settings, then members click Connect.
+2. Name it **HiRey** and paste the URL: `https://mcp.hirey.ai/mcp`
+3. Click **Add** and complete the one-time sign-in
 
 Full per-surface steps: <https://hirey.ai/install/claude>
 
 ### Uninstall
 
-Remove the skills but **keep your Hi identity** (`~/.config/hi`). That file is your durable, reusable agent credential — keeping it means a later reinstall re-attaches to the *same* agent. Deleting it is the single biggest cause of orphaned/duplicate anonymous agents.
-
 ```bash
-# Default: remove skills only (keeps identity → reinstall reuses the same agent)
-rm -rf ~/.claude/skills/hi-{onboard,use,events,repair}
-
-# Full reset: also erase your Hi identity (next install registers a brand-new agent)
-rm -rf ~/.config/hi
+claude plugin uninstall hirey-hi@hirey
 ```
 
 ## What you get
 
-Four skills that auto-activate based on the user's request:
+- One remote MCP server, `https://mcp.hirey.ai/mcp`, with OAuth sign-in. Its `workspace_workflows` tool exposes HiRey's live operation catalog, so new operations need no plugin update.
+- Skills: `hi-onboard` (sign-in and plugin status), `hi-use`, `hi-pages` (Pages for the people you met, written by HiRey's Page writer), `hi-events` (Inbox), `hi-instance`, `agentic-media` and `hi-repair`.
 
-- **`hi-onboard`** — first-use bootstrap; runs once to mint an anonymous Hi agent + cache credentials
-- **`hi-use`** — listings, matching feeds, pairings, meetings (all via direct REST calls)
-- **`hi-events`** — read the canonical message/task/notification Inbox without claiming items
-- **`hi-repair`** — scoped bug repair through root cause, evidence, and a reviewable PR
-
-Hi's public catalog exposes the canonical `workspace_workflows` capability. Its live `catalog` action supplies the current Person, Workspace, Need, People, Message and Meeting operations without baking old business tools into the plugin.
-
-## Architecture
-
-```
-Claude (assistant)
-  │
-  │  Bash + curl
-  ▼
-~/.config/hi/credentials.json     (client_id + client_secret + cached bearer)
-  │
-  │  Authorization: Bearer <token>
-  ▼
-https://hi.hirey.ai/v1/*          (hi-platform REST API)
-```
-
-- **Pure-skill plugin** — no MCP server, no Node daemon, no `npm install`, no `.mcp.json`. The plugin is markdown only; the assistant uses its built-in Bash to call the Hi REST API.
-- **Anonymous client_credentials** — `POST /v1/agents/api-keys` returns a pending Agent plus a version-1 `hi_ak_` envelope; the installer strictly decodes its client credentials and stores them once. No browser, no PKCE, no `/mcp`. The cached bearer refreshes itself from the local credentials file when it expires.
-- **Per-install Agent** — every Claude Code machine starts with a pending Agent. Anonymous public reads remain available; verified Google, email, or phone login attaches that Agent to the user's existing Workspace for private data and writes.
-
-## Privacy & scope
-
-- **No forced login wall** — installation itself is anonymous and does not create a Person. Hi asks for verified identity only when the requested operation needs private Workspace data or a write.
-- **Credentials live at `~/.config/hi/credentials.json`** with file mode 600 (user read/write only). The directory is mode 700.
-- **Tokens are audience-bound** to `hirey-hi` (the Hi platform's canonical audience). They cannot authenticate against any non-Hi surface.
-- **All traffic is HTTPS** to `https://hi.hirey.ai/v1/*`. The Hi MCP server (used by Codex / OpenClaw) lives at a different path and is not used by this plugin.
+Your Agent acts as you: it gets no identity, publication or consent authority beyond your own, and HiRey asks you before writes that reach others or cannot be undone.
 
 ## Layout (for plugin maintainers)
 
 ```
-.claude-plugin/
-  marketplace.json                    # what Claude Code reads when you `marketplace add`
-plugins/
-  hirey-hi/
-    .claude-plugin/plugin.json        # plugin manifest
-    skills/
-      hi-onboard/SKILL.md             # bootstrap (idempotent)
-      hi-use/SKILL.md                 # canonical workspace_workflows REST adapter
-      hi-events/SKILL.md              # canonical business Inbox
-      hi-repair/SKILL.md              # scoped Product Signal -> root cause -> reviewable PR workflow
-    reference/
-      api.md                          # full REST API + credentials lifecycle reference
-    README.md                         # plugin-level docs
+.claude-plugin/marketplace.json   # what Claude Code reads when you `marketplace add`
+plugins/hirey-hi/                 # the plugin (manifest, .mcp.json, skills)
+install.sh                        # served at https://hi.hirey.ai/v1/install/claude.sh
+.sync-source                      # hi-platform prod commit the plugin was mirrored from
 ```
 
-This repo is **automatically mirrored** from the `host-plugins-claude/` directory inside Hirey's internal hi-platform repo. Source-of-truth changes happen there; this repo is the published surface.
+`plugins/hirey-hi/` is mirrored from `agent-packages/claude/` in Hirey's hi-platform repository (generated from `agent-integration/`); change it there.
 
 ## Releases
 
-Tags follow `<plugin-name>--vMAJOR.MINOR.PATCH` (the convention emitted by `claude plugin tag`).
-The manifest on this branch is **`0.2.6`**; a version is a published release only after its matching
-tag exists.
-
-For the unpinned (default-branch) install:
-
-```text
-/plugin marketplace add hirey-ai/hirey-claude-plugin
-```
-
-To pin to an exact release, use the git URL with `#hirey-hi--vMAJOR.MINOR.PATCH` after verifying
-that the tag exists.
-
-Update every install shape, including curl-installed Skills, with
-`curl -fsSL https://hi.hirey.ai/v1/install/claude.sh | bash`, followed by `/reload-plugins`.
-The plugin reports its local version to Hi so required and recommended updates are returned
-separately from 401 credential recovery and 403 permission handling.
+The plugin reports its version to HiRey (`x-hirey-plugin-version`), so required and recommended updates come back from the server. Update with the install line above, or `claude plugin update hirey-hi@hirey`, then restart Claude Code.
 
 ## Sibling distributions
 
-| Host | Marketplace | Mechanism | Repo |
-|---|---|---|---|
-| Codex | `codex plugin marketplace add hirey-ai/hirey-codex-plugin` | Remote MCP + OAuth (DCR + PKCE) | [hirey-codex-plugin](https://github.com/hirey-ai/hirey-codex-plugin) |
-| Claude Code | `/plugin marketplace add hirey-ai/hirey-claude-plugin` | **Pure skill + REST + client_credentials** | this repo |
-| Hermes | `curl -fsSL https://hi.hirey.ai/v1/install/hermes.sh \| bash` | Native Python plugin + client_credentials | [hirey-hermes-plugin](https://github.com/hirey-ai/hirey-hermes-plugin) |
-| OpenClaw | `openclaw plugins install clawhub:hirey` | Native in-process plugin | [hi-openclaw-plugin](https://github.com/hirey-ai/hi-openclaw-plugin) |
-
-All four use the same canonical `workspace_workflows` operation catalog. Their installation,
-authentication, and host lifecycle differ, so each distribution is versioned and tested separately.
-
-Note: *Claude Code* (the terminal) uses the pure-skill path above. The other Claude surfaces — the **desktop app, claude.ai web, mobile, and Cowork** — use the remote MCP connector at `https://mcp.hirey.ai/mcp` (the same endpoint Codex uses), since the plugin/skill mechanism is Claude-Code-only.
+| Host | Install | Repo |
+|---|---|---|
+| Codex | `codex plugin marketplace add hirey-ai/hirey-codex-plugin` | [hirey-codex-plugin](https://github.com/hirey-ai/hirey-codex-plugin) |
+| Claude Code | `curl -fsSL https://hi.hirey.ai/v1/install/claude.sh \| bash` | this repo |
+| Hermes | `curl -fsSL https://hi.hirey.ai/v1/install/hermes.sh \| bash` | [hirey-hermes-plugin](https://github.com/hirey-ai/hirey-hermes-plugin) |
+| OpenClaw | `openclaw plugins install clawhub:hirey` | [hi-openclaw-plugin](https://github.com/hirey-ai/hi-openclaw-plugin) |
 
 ## Support
 
 - Plugin issues / requests → [open an issue on this repo](https://github.com/hirey-ai/hirey-claude-plugin/issues)
-- Hi platform questions → [hi.hirey.ai](https://hi.hirey.ai)
+- HiRey questions → [hi.hirey.ai](https://hi.hirey.ai)
 - Security disclosures → security@hirey.com
 
 ## License
 
-MIT — see [LICENSE](./LICENSE). The MIT license covers the plugin shell (manifest, skill markdown, docs). The remote Hi platform this plugin connects to (`https://hi.hirey.ai`) is operated by Hirey under separate Terms of Service.
+MIT — see [LICENSE](./LICENSE). The MIT license covers the plugin shell (manifest, skill markdown, docs). The HiRey platform this plugin connects to is operated by Hirey under separate Terms of Service.

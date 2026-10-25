@@ -1,14 +1,14 @@
 {
   "name": "hirey-hi",
-  "version": "0.2.6",
-  "description": "Hirey Hi for Claude Code — use the canonical workspace_workflows REST capability for people, messages, meetings and private Workspace work.",
+  "version": "0.3.4",
+  "description": "Hirey Hi for Claude — connect Claude to the hosted Hirey Hi MCP endpoint and use Needs, People, messages, introductions, meetings and private memory.",
   "author": {
     "name": "Hirey",
-    "email": "security@hirey.com",
     "url": "https://hi.hirey.ai"
   },
   "homepage": "https://hi.hirey.ai",
-  "repository": "https://github.com/hirey-ai/hirey-claude-plugin",
-  "license": "MIT",
-  "keywords": ["hirey", "hi", "people", "recruiting", "hiring", "matching", "skill", "rest"]
+  "license": "UNLICENSED",
+  "keywords": ["hirey", "hi", "mcp", "people", "messages", "meetings"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
 }

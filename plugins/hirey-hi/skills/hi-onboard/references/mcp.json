@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "hi": {
+      "type": "http",
+      "url": "https://mcp.hirey.ai/mcp",
+      "headers": {
+        "x-hirey-plugin-host": "claude",
+        "x-hirey-plugin-version": "0.3.4"
+      }
+    }
+  }
+}

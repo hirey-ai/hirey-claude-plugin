@@ -1,0 +1,97 @@
+{
+  "schema": "hirey.agent_package.v1",
+  "generated_by": "scripts/build-agent-packages.mjs",
+  "host": {
+    "id": "claude",
+    "displayName": "Claude"
+  },
+  "plugin": {
+    "name": "hirey-hi",
+    "marketplace": "hirey",
+    "version": "0.3.4"
+  },
+  "versions": {
+    "sharedSkills": "0.2.14",
+    "backendContract": {
+      "tool": "workspace_workflows",
+      "version": "v1.1"
+    },
+    "plugin": "0.3.4",
+    "publicLatest": "0.3.4",
+    "minimumSupported": "0.2.4",
+    "packageState": "candidate"
+  },
+  "output_root": "agent-packages/claude",
+  "source_content_digest": "sha256:191599963778afb6a8af549e9c643dae6bdd109e5b858a19adf503c4e3f1cf7e",
+  "package_digest": "sha256:2e700d4da95eafd1000ecd586636da3bc75f0f93e50326e9ef008620084b6751",
+  "files": [
+    {
+      "path": ".claude-plugin/plugin.json",
+      "sha256": "d3bd84c043d5da477f1ca23ee2056b7512775bb6bb42e04bb7e528b0134e93e3"
+    },
+    {
+      "path": ".mcp.json",
+      "sha256": "b9434feefb5bfc9a9c829ce81c5c27332b0bb00df0ce962c210cc31166c8ed42"
+    },
+    {
+      "path": "README.md",
+      "sha256": "fe5f32288a400f79ccc11c5a1378b9e3e839840ad8cd19b0ac18ea5e9b56891c"
+    },
+    {
+      "path": "skills/agentic-media/SKILL.md",
+      "sha256": "735d83a4d216d76251cc1f4299fea439069a34df63ddbc25631b6b91fd0cc51b"
+    },
+    {
+      "path": "skills/agentic-media/references/control-contract.md",
+      "sha256": "bd0746154e066ade738f9dad7b923b4819faa46a20184862312e9c1e5a823259"
+    },
+    {
+      "path": "skills/agentic-media/scripts/agentic_media_upload.py",
+      "sha256": "1bcee8594de62f95241c792ac0ed98894d067ff8019fe6046fa4f23b40725d0a"
+    },
+    {
+      "path": "skills/hi-events/SKILL.md",
+      "sha256": "8daf1d1b212e58974d2907240e05163e73407d439b4f1abc5be490296ffb0d62"
+    },
+    {
+      "path": "skills/hi-instance/SKILL.md",
+      "sha256": "685d5e956f5c01229053585526b399a3d074d49fa6ee7f8b7363c05c7fc39276"
+    },
+    {
+      "path": "skills/hi-instance/scripts/hi_instance.py",
+      "sha256": "dd3428e1018d5ed8481db93038ae65697036b2a61bc74fee9c3b1fe2c66b082e"
+    },
+    {
+      "path": "skills/hi-onboard/SKILL.md",
+      "sha256": "e7ae88789baddea80bc61de5491eab170225aa7a245c2ddb059241198d1a1237"
+    },
+    {
+      "path": "skills/hi-onboard/references/common.md",
+      "sha256": "46925b1f839c8e9073c946e25e59f5a56ffcc29219ff5d42829566d02c841692"
+    },
+    {
+      "path": "skills/hi-onboard/references/mcp.json",
+      "sha256": "b9434feefb5bfc9a9c829ce81c5c27332b0bb00df0ce962c210cc31166c8ed42"
+    },
+    {
+      "path": "skills/hi-pages/SKILL.md",
+      "sha256": "e1cdf1104f5ace1e08ceee1cfa79547a392d58b8f877767710768912aa3e2ced"
+    },
+    {
+      "path": "skills/hi-pages/references/operations.md",
+      "sha256": "65fb5a5085d368319e46e925c578202311960c1d1694411afd7696af33e9d171"
+    },
+    {
+      "path": "skills/hi-pages/scripts/page_batch.py",
+      "sha256": "1f69519b5f294775c6ea15a308783f36328ce3190906fa3f6de1a25ad781e6ca"
+    },
+    {
+      "path": "skills/hi-repair/SKILL.md",
+      "sha256": "6e5ca5a8cac3b194963a69261a366e332027fa7fc9b138b59dbfb0f78896f970"
+    },
+    {
+      "path": "skills/hi-use/SKILL.md",
+      "sha256": "780dca84e790b649f2c607adf39845a3500cc1f2a4915b719cb00dc32851bbe9"
+    }
+  ]
+}

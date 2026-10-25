@@ -64,7 +64,31 @@ fi
 
 step "Installing Hirey Hi plugin (v${VERSION}) from ${MARKETPLACE_SOURCE}"
 
-# ─── 1. Move the earlier REST installer's skills aside ───────────────────
+# ─── 1. Marketplace and plugin ───────────────────────────────────────────
+if claude plugin marketplace list 2>/dev/null | grep -q "❯ $MARKETPLACE_NAME\$"; then
+  claude plugin marketplace update "$MARKETPLACE_NAME" || fail "Could not update the $MARKETPLACE_NAME marketplace"
+else
+  claude plugin marketplace add "$MARKETPLACE_SOURCE" || fail "Could not add the $MARKETPLACE_SOURCE marketplace"
+fi
+if claude plugin list 2>/dev/null | grep -q "❯ $PLUGIN\$"; then
+  claude plugin update "$PLUGIN" || fail "Could not update $PLUGIN"
+else
+  claude plugin install "$PLUGIN" || fail "Could not install $PLUGIN"
+fi
+# Claude Code may install a third-party plugin disabled; `enable` fails on an
+# already enabled plugin, so read the status first.
+plugin_status() {
+  claude plugin list 2>/dev/null | awk -v p="❯ $PLUGIN" '$0 ~ p"$" {found=1; next} found && /Status:/ {print; exit}'
+}
+if ! plugin_status | grep -q " enabled"; then
+  claude plugin enable "$PLUGIN" || fail "Could not enable $PLUGIN"
+fi
+plugin_status | grep -q " enabled" \
+  || fail "$PLUGIN is installed but not enabled; run: claude plugin enable $PLUGIN"
+ok "Plugin $PLUGIN installed and enabled"
+
+# ─── 2. Move the earlier REST installer's skills aside ──────────────────
+# Only after the plugin is in place, so a failed install leaves them working.
 LEGACY=""
 for name in hi-onboard hi-use hi-events hi-repair; do
   if [ -f "$SKILLS_DIR/$name/SKILL.md" ] && grep -q "hi.hirey.ai" "$SKILLS_DIR/$name/SKILL.md"; then
@@ -76,20 +100,6 @@ for name in hi-onboard hi-use hi-events hi-repair; do
   fi
 done
 [ -z "$LEGACY" ] || ok "Earlier REST skills moved to $LEGACY"
-
-# ─── 2. Marketplace and plugin ───────────────────────────────────────────
-if claude plugin marketplace list 2>/dev/null | grep -q "❯ $MARKETPLACE_NAME\$"; then
-  claude plugin marketplace update "$MARKETPLACE_NAME" || fail "Could not update the $MARKETPLACE_NAME marketplace"
-else
-  claude plugin marketplace add "$MARKETPLACE_SOURCE" || fail "Could not add the $MARKETPLACE_SOURCE marketplace"
-fi
-if claude plugin list 2>/dev/null | grep -q "❯ $PLUGIN\$"; then
-  claude plugin update "$PLUGIN" || fail "Could not update $PLUGIN"
-else
-  claude plugin install "$PLUGIN" || fail "Could not install $PLUGIN"
-fi
-claude plugin enable "$PLUGIN" >/dev/null 2>&1 || true
-ok "Plugin $PLUGIN installed"
 
 # ─── 3. Done ─────────────────────────────────────────────────────────────
 echo

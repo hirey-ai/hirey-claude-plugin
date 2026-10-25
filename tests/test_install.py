@@ -10,8 +10,18 @@ FAKE_CLAUDE = r'''#!/usr/bin/env bash
 echo "$*" >> "$TEST_CALLS"
 case "$*" in
   "plugin marketplace list") [ "${HAVE_MARKETPLACE:-0}" = 1 ] && printf '  \xe2\x9d\xaf hirey\n'; exit 0 ;;
-  "plugin list") [ "${HAVE_PLUGIN:-0}" = 1 ] && printf '  \xe2\x9d\xaf hirey-hi@hirey\n'; exit 0 ;;
+  "plugin list")
+    if [ "${HAVE_PLUGIN:-0}" = 1 ] || grep -qx "plugin install hirey-hi@hirey" "$TEST_CALLS"; then
+      printf '  \xe2\x9d\xaf hirey-hi@hirey\n    Version: 0.3.4\n'
+      if [ "${START_DISABLED:-0}" = 1 ] && ! grep -qx "plugin enable hirey-hi@hirey" "$TEST_CALLS"; then
+        printf '    Status: \xe2\x9c\x98 disabled\n'
+      else
+        printf '    Status: \xe2\x9c\x94 enabled\n'
+      fi
+    fi
+    exit 0 ;;
   "plugin install hirey-hi@hirey") [ "${FAIL_INSTALL:-0}" = 1 ] && exit 1; exit 0 ;;
+  "plugin enable hirey-hi@hirey") [ "${FAIL_ENABLE:-0}" = 1 ] && exit 1; exit 0 ;;
 esac
 exit 0
 '''
@@ -25,7 +35,7 @@ class InstallTests(unittest.TestCase):
         root = Path(tmp.name)
         bin_dir = root / "bin"
         bin_dir.mkdir()
-        for tool in ("bash", "grep", "mkdir", "mv", "date", "env"):
+        for tool in ("bash", "grep", "mkdir", "mv", "date", "env", "awk"):
             path = subprocess.run(["/usr/bin/which", tool], capture_output=True, text=True).stdout.strip()
             (bin_dir / tool).symlink_to(path)
         if claude:
@@ -69,10 +79,27 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(len(legacy), 1)
         self.assertEqual((legacy[0] / "hi-use" / "SKILL.md").read_text(), LEGACY_SKILL)
 
-    def test_install_failure_is_reported(self):
-        result, _, _ = self.run_install({"FAIL_INSTALL": "1"})
+    def test_install_failure_is_reported_and_keeps_legacy_skills(self):
+        result, _, skills_dir = self.run_install({"FAIL_INSTALL": "1"}, skills={"hi-use": LEGACY_SKILL})
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Could not install hirey-hi@hirey", result.stderr)
+        self.assertEqual((skills_dir / "hi-use" / "SKILL.md").read_text(), LEGACY_SKILL)
+
+    def test_disabled_plugin_is_enabled(self):
+        result, calls, _ = self.run_install({"START_DISABLED": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("plugin enable hirey-hi@hirey", calls)
+
+    def test_enabled_plugin_is_not_enabled_again(self):
+        result, calls, _ = self.run_install({"HAVE_MARKETPLACE": "1", "HAVE_PLUGIN": "1"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("plugin enable hirey-hi@hirey", calls)
+
+    def test_enable_failure_is_reported_and_keeps_legacy_skills(self):
+        result, _, skills_dir = self.run_install({"START_DISABLED": "1", "FAIL_ENABLE": "1"}, skills={"hi-use": LEGACY_SKILL})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Could not enable hirey-hi@hirey", result.stderr)
+        self.assertEqual((skills_dir / "hi-use" / "SKILL.md").read_text(), LEGACY_SKILL)
 
     def test_no_claude_binary_points_elsewhere(self):
         result, calls, _ = self.run_install(claude=False)

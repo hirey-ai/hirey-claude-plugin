@@ -1,232 +1,207 @@
 ---
 name: hi-onboard
-description: First-time setup and reconnect for the Hirey Hi Claude plugin. Use after install, when credentials are missing, or when Hi returns 401 invalid_token. Preserve anonymous read access, refresh the existing installation before considering reset, and follow the host-specific version policy returned by Hi. This plugin uses REST rather than MCP.
+description: Connect, upgrade, or recover Hirey Hi in Claude through the hosted remote MCP endpoint and the normal Claude OAuth flow. Use when workspace_workflows or hi_agent_status is missing, a Hi MCP call returns a structured 401/403 authentication error, the server reports an older plugin version, or the user asks to connect Hi.
 ---
 
-# Hi Onboard (one-time bootstrap, REST + client_credentials)
+# Hi Onboard (Claude)
 
-Hi is Hirey's people-to-people platform. This plugin gives Claude direct REST access to Hi's tools without any MCP layer, browser OAuth flow, or user interaction. Identity is anchored by a long-lived `client_credentials` pair the assistant generates and stores at `~/.config/hi/credentials.json`. Once that file exists, every subsequent Hi call uses the cached bearer token (or refreshes it via the cached client_id + client_secret).
+Hirey Hi is configured by this plugin as a remote MCP server at `https://mcp.hirey.ai/mcp`. There is
+no npm package, local daemon, manually pasted API key, or anonymous Person to create.
 
-## Use when
+Read [references/common.md](references/common.md) for the shared identity, confirmation, error and
+receipt rules that every Hi host must follow. The sections below are the Claude-specific
+install, OAuth, reload and recovery steps.
 
-- the user just enabled the `hirey-hi` plugin and is about to ask for any Hi workflow
-- the user types "set up hi", "install hi", "register hi"
-- you are about to call a Hi REST endpoint and the credentials file under `${XDG_CONFIG_HOME:-$HOME/.config}/hi` is absent
-- the assistant just got a `401 invalid_token` or `token_expired` from a Hi endpoint — step 2 refreshes the bearer from the cached `client_credentials`, then retries the call once
-- the user explicitly says "re-register", "reset hi identity", "log in again"
+## Connect
 
-## Do not use when
+1. Make sure the `hirey-hi` plugin is installed and enabled, or add the remote server directly with
+   the host CLI:
 
-- the XDG-aware credentials file exists and the cached token is fresh according to its returned expiry — call the target endpoint with that token, except after verified binding when one forced refresh is required
-- the user is asking a workflow question (find, match, pair, meeting) — go to `hi-use` (which will pull credentials transparently)
-- inbound events drain — go to `hi-events`
+   ```text
+   claude mcp add --transport http --scope user hi https://mcp.hirey.ai/mcp
+   ```
 
-## Check the Claude plugin version first
+   Use `--scope local`, `--scope user`, or `--scope project` as the user prefers; do not choose for
+   them. Trust the project scope only for a repository the user already trusts. The plugin's
+   declared server is in [references/mcp.json](references/mcp.json).
+2. Complete OAuth through `/mcp` in Claude, letting the user finish only the browser page.
+   The server advertises OAuth discovery at `https://mcp.hirey.ai/mcp`.
+3. Fully restart Claude so the MCP server and its skills load in the new session.
+4. Verify that `hi_agent_status` and `workspace_workflows` are present.
+5. Call `hi_agent_status` with `client_plugin_version: "0.3.4"`, then call
+   `workspace_workflows` with `action: catalog` before continuing.
 
-At the start of setup or recovery, call the public catalog with the installed plugin version:
+If OAuth returns an error, report that exact error. Do not fall back to a local MCP process, an npm
+package, a static API key, or an invented installation endpoint. Do not add a REST client, a local
+business schema cache, or a custom token-refresh loop: the host's native OAuth and the remote MCP
+service own those.
 
-```bash
-curl -fsS --connect-timeout 5 --max-time 30 https://hi.hirey.ai/v1/capabilities \
-  -H 'x-hirey-plugin-host: claude' \
-  -H 'x-hirey-plugin-version: 0.2.6' \
-  | jq '._meta.hirey_plugin'
-```
+Authentication establishes the Account, Person, Workspace, Agent, and Agent Session used by Core.
+Anonymous browsing may create a pending Agent, but it does not create a permanent anonymous Person
+and it is not a replacement for OAuth when private Workspace data is needed.
 
-- `update_required=true`: run the returned official install command, then run `/reload-plugins`
-  before retrying. The install command refreshes both the plugin and its Skills.
-- `update_recommended=true`: tell the user an update is available, but do not block a compatible request.
-- `401 missing_bearer`, `invalid_token`, or `token_expired`: rerun the guarded recovery script with `HI_FORCE_TOKEN_REFRESH=1` even when local expiry appears fresh, then retry the original request once. Never re-register.
-- `403 insufficient_oauth_scope` or `forbidden`: the credential is valid; do not create another Agent or loop through bootstrap.
-- A pending Agent may use only public `people.find`, `people.explain`, and staged `capture.record`. Other operations require verified identity.
+## Bind on the first authenticated connection
 
-## Bootstrap sequence (assistant runs all of this via Bash, no user touch)
+After OAuth completes and the tools are verified, bind this installation as part of the connection
+instead of waiting for a later instance-directed action. A fresh Agent must start on the new
+per-identity instance mechanism:
 
-Run the script below verbatim. It reuses existing credentials and guards ambiguous first installation; the server's API-key creation endpoint itself is not idempotent. Never bypass the lock or pending fence.
+1. Run the `hi-instance` helper's bare `status --host claude` to obtain the stable
+   `installation_ref`. It creates the installation record but no key pair.
+2. Call `agent_instance.current` with `{local_instance_ref: <installation_ref>}`. If it reports
+   `binding_status: "bound"`, this Agent Session is already bound; continue.
+3. When it reports `instance_binding_required`, complete the `hi-instance` first-bind flow:
+   `status --profile <profile_key> --confirmed-fingerprint <existing_public_key_fingerprint>` (omit
+   the flag for a null fingerprint), `agent_instance.binding.begin`, sign the exact challenge,
+   `agent_instance.binding.finish`, then `record` the returned instance id.
+4. Report the instance `agent_instance.current` returns now, not a remembered one. Ordinary Hi work
+   stays available even if binding cannot complete; a binding failure is an unbound instance, not an
+   invalid credential.
 
-**Referral attribution** — the current API does not accept `channel_code`. If one was supplied, stop and report unsupported attribution; do not silently discard it or claim attribution succeeded.
+This skill is the deterministic trigger available to the host. A host runtime that never runs its
+onboarding skill after OAuth has no automatic post-login hook, so its first bind still happens on the
+first instance-directed action; never claim an automatic first-login bind for such a host.
 
-```bash
-set -euo pipefail
-umask 077
-VERSION="0.2.6"
-HI_BASE_EXPLICIT="${HI_BASE+x}"
-HI_BASE="${HI_BASE:-https://hi.hirey.ai}"
-CREDS_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hi"
-CREDS_FILE="$CREDS_DIR/credentials.json"
-CRED_TMP=""
-LOCK_OWNED=0
-cleanup() {
-  [ -z "$CRED_TMP" ] || rm -f "$CRED_TMP"
-  if [ "$LOCK_OWNED" = 1 ]; then rmdir "$LOCK_DIR" 2>/dev/null || true; fi
-}
-trap cleanup EXIT
-fail() { printf '%s\n' "$1" >&2; exit 1; }
-ok() { printf '%s\n' "$1"; }
-mkdir -p "$CREDS_DIR" && chmod 700 "$CREDS_DIR"
-LOCK_DIR="$CREDS_DIR/.register.lock"
-for _ in 1 2 3 4 5 6 7 8 9 10; do
-  if mkdir "$LOCK_DIR" 2>/dev/null; then LOCK_OWNED=1; break; fi
-  sleep 1
-done
-[ "$LOCK_OWNED" = 1 ] || fail "hi_register_busy: installation or token refresh is already running"
-# Keep the same lock through credential re-read and token refresh: refreshing a
-# pending token invalidates the previous bearer for this shared installation.
-HI_BASE="${HI_BASE%/}"
-if [ -s "$CREDS_FILE" ]; then
-  STORED_BASE=$(jq -er '.platform_base_url // empty | select(type == "string" and length > 0)' "$CREDS_FILE" 2>/dev/null || true)
-  if [ -n "$STORED_BASE" ]; then
-    STORED_BASE="${STORED_BASE%/}"
-    if [ -n "$HI_BASE_EXPLICIT" ] && [ "$HI_BASE" != "$STORED_BASE" ]; then
-      fail "hi_credential_host_mismatch: explicit HI_BASE differs from stored credential host; no credential request sent"
-    fi
-    HI_BASE="$STORED_BASE"
-  fi
-fi
-printf '%s' "$HI_BASE" | jq -Re 'test("^https://[A-Za-z0-9.-]+(:[0-9]+)?$|^http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?$")' >/dev/null 2>&1 \
-  || fail "hi_credential_host_insecure: use HTTPS or explicit loopback HTTP only"
+## Recover an expired or invalid credential
 
-# Helper: does the creds file already hold a usable client_id?
-creds_have_client_id() { [ -s "$CREDS_FILE" ] && [ -n "$(jq -er 'select((.client_id | type == "string" and length > 0) and (.client_secret | type == "string" and length > 0)) | .client_id' "$CREDS_FILE" 2>/dev/null)" ]; }
+Do not treat every 401 as a request to create a new anonymous Agent. If Hi worked before, the saved
+credential may have expired or a manual header may be overriding OAuth. For `invalid_token`,
+`missing_bearer`, or a failed OAuth refresh:
 
-# CRITICAL (identity durability): re-registering when a creds file EXISTS but is merely
-# unreadable / corrupt / wrong-HOME silently mints a NEW Hi agent and ORPHANS the user's
-# real identity (their listings, credits, phone-bound workspace). Audit found 204/216 prod
-# agents are orphans, largely from exactly this. So: register ONLY when the file is truly
-# ABSENT. A present-but-unusable file is a LOUD error the user must resolve explicitly —
-# orphaning must never be silent/accidental.
-if [ -e "$CREDS_FILE" ] && ! [ -r "$CREDS_FILE" ]; then
-  fail "Credentials exist but are not readable: $CREDS_FILE
-   Refusing to register a NEW Hi identity — that would orphan your existing agent + data.
-   Fix it:  chmod 600 \"$CREDS_FILE\"   (or, to deliberately start fresh: rm it, then re-run)"
-fi
-if [ -e "$CREDS_FILE" ] && ! creds_have_client_id; then
-  fail "Credentials exist but have no valid client_id (corrupt/empty): $CREDS_FILE
-   Refusing to silently register a NEW Hi identity — that would orphan your existing agent + data.
-   If this file is junk:  rm \"$CREDS_FILE\"  then re-run.  Otherwise restore it from backup."
-fi
+1. Tell the user that the saved Hi credential is no longer valid and that reconnecting will attach
+   this Claude installation to their existing Hi account.
+2. Inspect the `hi` server with the host's native MCP commands. Remove only a manual
+   `Authorization` header or static key override; keep the plugin's declared remote server.
+3. Complete the host's OAuth flow again through `/mcp`. Do not read, print, or ask the user to paste
+   the old credential.
+4. Fully restart Claude, then call `hi_agent_status` with version
+   `0.3.4`, call `workspace_workflows(action: catalog)`, and retry the original
+   request once.
 
-if ! [ -e "$CREDS_FILE" ]; then
-  # Serialize concurrent installers: two Claude sessions racing on a fresh machine would
-  # otherwise each mint a separate agent. mkdir is an atomic cross-process mutex.
-  if creds_have_client_id; then
-    ok "Existing credentials at $CREDS_FILE — keeping agent_id=$(jq -r .agent_id "$CREDS_FILE")"
-  else
-    [ ! -e "$CREDS_DIR/.registration-pending.json" ] || fail "hi_registration_outcome_unknown: preserve pending marker and reconcile the previous attempt; do not register again"
-    [ -z "${HI_CHANNEL_CODE:-}" ] || fail "hi_channel_attribution_unsupported: current installation API does not accept referral metadata"
-    # The server does not provide registration idempotency. Persist a non-secret
-    # fence BEFORE sending; an ambiguous response must never mint another Agent.
-    printf '%s\n' '{"status":"outcome_unknown","host":"claude"}' > "$CREDS_DIR/.registration-pending.json"
-    REG_BODY=$(jq -n --arg version "$VERSION" '{agent_type:"claude",display_name:"Claude Code (Hirey skill)",client_version:$version}')
-    REG=$(curl -fsS --connect-timeout 5 --max-time 30 -X POST "$HI_BASE/v1/agents/api-keys" \
-      -H 'content-type: application/json' \
-      --data "$REG_BODY") \
-      || fail "hi_registration_outcome_unknown: API-key creation failed; preserve pending marker and reconcile before retry"
+Do not create an anonymous API key for this recovery. It must not replace or mask an expired
+signed-in credential.
 
-    printf '%s' "$REG" | jq -e '
-      (.error == null) and (.agent_id | type == "string" and length > 0) and .status == "pending"
-      and (.api_key | type == "string" and test("^hi_ak_[A-Za-z0-9_-]+$"))
-    ' >/dev/null 2>&1 || { echo "hi_register_failed: invalid registration response; credentials unchanged" >&2; exit 1; }
-    CRED_TMP=$(mktemp "$CREDS_DIR/.credentials.XXXXXX")
-    printf '%s' "$REG" | jq -e --arg base "$HI_BASE" '
-      (.api_key | ltrimstr("hi_ak_") | gsub("-";"+") | gsub("_";"/") | @base64d | fromjson) as $key
-      | if ($key.v != 1 or ($key.id | type != "string" or length == 0) or ($key.secret | type != "string" or length == 0)) then error("invalid key") else {
-      client_id:          $key.id,
-      client_secret:      $key.secret,
-      agent_id:           .agent_id,
-      status: .status,
-      issuer:             $base,
-      audience:           "hirey-hi",
-      token_url:          ($base + "/oauth/token"),
-      platform_base_url:  $base,
-      access_token:           null,
-      access_token_issued_at: 0,
-      access_token_expires_in: 0
-    } end' > "$CRED_TMP" 2>/dev/null || fail "hi_register_failed: invalid credential envelope; reconcile pending attempt"
-    mv "$CRED_TMP" "$CREDS_FILE"
-    CRED_TMP=""
-    rm -f "$CREDS_DIR/.registration-pending.json"
-    ok "Anonymous agent registered: $(jq -r .agent_id "$CREDS_FILE")"
-  fi
-else
-  ok "Existing credentials at $CREDS_FILE — keeping agent_id=$(jq -r .agent_id "$CREDS_FILE")"
-fi
+## Version diagnostics
 
-# ─── 3. Mint or refresh access token (5-min skew) ────────────────────────
-NOW=$(date +%s)
-ISSUED_AT=$(jq '.access_token_issued_at // 0' "$CREDS_FILE")
-EXPIRES_IN=$(jq '.access_token_expires_in // 0' "$CREDS_FILE")
-EXP_AT=$(( ISSUED_AT + EXPIRES_IN - 300 ))
+Host and plugin versions are diagnostic metadata, never business authority. Report a returned
+`update_required` or `update_recommended` hint without refusing an otherwise compatible and
+authorized call. Enforce actual protocol, identity and business permission errors separately.
+A null update result is unknown or not applicable; do not infer an obsolete installation.
+`restart_required` is package-update guidance for a known older client version only: it is never
+credential or business-authority evidence, and it never means the OAuth credential must be reset.
+Diagnose a credential or permission problem from `error_code` in Status recovery. Use only the
+installed host's supported update instructions. Do not execute a command belonging to another host
+or assume an unpublished candidate has a public installer. After an actual update, follow the host's
+reload requirements; an update may need a reload without an OAuth restart. No branded package
+version is required for a Generic client.
 
-if [ "${HI_FORCE_TOKEN_REFRESH:-0}" = 1 ] || [ "$NOW" -ge "$EXP_AT" ]; then
-  CID=$(jq -r .client_id "$CREDS_FILE")
-  CSEC=$(jq -r .client_secret "$CREDS_FILE")
-  AUD=$(jq -r .audience "$CREDS_FILE")
-  TOK=$(curl -fsS --connect-timeout 5 --max-time 30 -X POST "$HI_BASE/oauth/token" \
-    --data-urlencode "grant_type=client_credentials" \
-    --data-urlencode "client_id=$CID" --data-urlencode "client_secret=$CSEC" --data-urlencode "audience=$AUD") \
-    || fail "Token endpoint unreachable"
-  printf '%s' "$TOK" | jq -e '(.access_token | type == "string" and length > 0) and (.expires_in | type == "number" and . > 0)' >/dev/null 2>&1 \
-    || fail "hi_token_refresh_failed: invalid token response; existing credentials preserved"
-  CRED_TMP=$(mktemp "$CREDS_DIR/.credentials.XXXXXX")
-  jq --argjson tok "$TOK" --arg now "$NOW" '
-    .access_token            = $tok.access_token
-    | .access_token_issued_at  = ($now | tonumber)
-    | .access_token_expires_in = $tok.expires_in
-  ' "$CREDS_FILE" > "$CRED_TMP"
-  mv "$CRED_TMP" "$CREDS_FILE"
-  CRED_TMP=""
-  ok "Access token refreshed (expires in $(jq -r .access_token_expires_in "$CREDS_FILE")s)"
-else
-  ok "Cached token still valid"
-fi
+## Local file capability
 
-printf '%s\n' 'Installation credential ready; private work still requires verified identity.'
-```
+The `agentic-media` upload helper needs a local file plus shell access. Use it only when the current
+Claude session actually grants both; otherwise report that the local file cannot be read and
+do not invent a URL-fetching or scraping workaround.
 
-If any step exits non-zero or returns `error` JSON, report the failed step and safe error code, without printing raw responses or credentials, and stop. Common errors:
+## Local instance
 
-- `hi_registration_outcome_unknown` — creation may already have happened. Preserve the pending fence, stop, and reconcile; never silently retry registration.
-- `hi_register_failed` — malformed creation response or credential envelope. Preserve the pending fence and stop; do not print the raw response.
-- `invalid_grant` from `/oauth/token` — the OAuth client was revoked/expired server-side. **Do NOT auto-delete `~/.config/hi/credentials.json`** — deleting it mints a brand-new agent and orphans the existing agent + any phone-bound workspace data. Surface the error to the user and let THEM decide: if a phone was bound, the workspace data is recoverable by re-binding the same phone on a fresh identity, so discarding creds is only safe with explicit user consent.
-- `agent_disabled` or `agent_merged` from `/v1/agents/me` or a capability call — stop and surface the server recovery guidance. Do not create a replacement Agent.
+This package ships the `hi-instance` skill. When a Hi call answers `instance_binding_required`, or
+when the user asks which computer this Claude installation is running on, use it: read the
+verified `profile_key` from `agent_instance.current` and the server-confirmed
+`existing_public_key_fingerprint` for the local `installation_ref`, then run
+`python3 scripts/hi_instance.py status --host claude --profile <profile_key>
+--confirmed-fingerprint <existing_public_key_fingerprint>` from that skill's directory and follow
+its bind flow. The installation keeps one stable audit reference, and each verified Person and
+logical Agent gets its own key pair outside this plugin's version cache, so updating, reinstalling
+or re-authorizing the plugin keeps the profile and switching Person never shares a key. Recover an
+`instance_key_mismatch` or `instance_revoked` refusal with the helper's `recover` plus the explicit
+`agent_instance.recovery.begin` route, never by forgetting the whole installation. Only an explicit
+`forget` of the whole installation, a wiped user data directory or a new computer rotates the
+reference. The reported display name is only a label — the instance identity is the key pair, and
+the reference is not proof of a physical machine.
 
-## After setup: continue the user's request
+## Connection surface
 
-After the user explicitly consents to Google binding and the binding operation returns
-`status:"verified"`, rerun the guarded script above with `HI_FORCE_TOKEN_REFRESH=1`.
-This reuses the existing credentials under the shared lock and obtains the active Agent
-Session token even if the previous pending token was still fresh. Do not set local
-`status:"active"` or assume a JWT-looking string proves identity. Then read
-`GET /v1/agents/me` with the refreshed bearer and verify its flat `agent_id`, `person_id`,
-`workspace_id` and `agent_session_id`; only that server response confirms active identity.
-The local `status` originally returned by installation is historical, not an auth decision.
-If refresh or the identity read fails, stop and report the actual error without re-registering.
+When you report the connection, use the shared connection copy and the separate evidence fields below
+instead of an opaque "connected" flag.
 
-A valid installation credential completes plugin setup. Do not require a profile, Listing,
-or identity update to finish setup, and do not create these records automatically.
+## Connection copy
 
-- Continue the user's original request. If no goal was supplied, ask what they want help with.
-- A pending Agent may use only `people.find`, `people.explain`, and staged `capture.record`.
-- For private Workspace work, messaging, meetings, or publication, guide the user through the
-  supported Google, phone, or email binding first, then retry the requested operation.
-- Create a Need or Listing only when the user's request calls for it. Read the current operation
-  contract from `workspace_workflows` and obtain confirmation for actions that require it.
-- Do not rely on legacy `onboarding_status`, `profile_ready`, or `listing_count` fields to
-  decide whether setup is complete.
+Product-facing wording for a connection surface. This is reviewable copy; any public UI exposure
+remains subject to the existing product-change and release contract.
 
-## What to tell the user
+- Title: **Choose your Agent and connect Hi**
+- Subtitle: **Use Hi from the Agent you already work with.**
+- Host card shows: support status; **Connect Hi**; sign-in/authorization status; a reload
+  instruction when needed; plugin version/update when applicable; local-file limitations; the
+  validation result.
 
-Never show the client_secret, access_token, or credential file. Report the actual installation
-state and continue their request. For a pending installation, say that public people search is
-ready and that private work will require identity verification when requested.
+Display separate evidence instead of one opaque "connected" flag:
 
-## Installation versus verified identity
+- **Tools available**
+- **Credential valid**
+- **Identity verified**
+- **Permission for this action**
+- **Update available/required**
 
-Hi's `/v1/agents/api-keys` endpoint is **deliberately unauthenticated**. It returns a pending Agent and a `hi_ak_` envelope. Strictly decode its version-1 client credentials locally; do not retain or print a second copy of the API key. A `.registration-pending.json` fence survives ambiguous failures because this endpoint is not idempotent. Never remove that fence or repeat registration automatically. A successful token exchange proves installation credentials; `/v1/agents/me` requires a verified active session and must not be used as the pending-install success gate. PKCE / browser-mediated OAuth would add user friction without adding security — there's no human identity to authenticate against (each install is its own anonymous agent), and the client_secret is generated server-side, transmitted once over TLS, and stored at user 600 perms locally.
+An authenticated identity does not imply every business permission. An unknown state stays **Not
+checked**; never render an unknown as a pass. A generic client without a branded plugin shows
+**Plugin version: Not applicable** and never another host's upgrade command. A host whose package is
+only a candidate is labeled **Awaiting host verification**.
 
-This is the same identity model OpenClaw used (client_credentials baked into local state) — we just moved the storage from `~/.openclaw/hi-mcp/<profile>/` to `~/.config/hi/credentials.json` and dropped the local stdio MCP daemon. Every Hi tool call is a direct HTTPS POST to `https://hi.hirey.ai/v1/capabilities/<id>/call`.
+## Status recovery
 
-## Reference (load on demand)
+On `reconnect_required`, tell the user the returned message and stop; do not retry, even if `update_required` is true and `update_command` is null.
 
-- Full REST API: see [../../reference/api.md](../../reference/api.md) for the complete endpoint list, capability schemas, and token lifecycle.
-- Public Hi platform contract: `GET https://hi.hirey.ai/.well-known/hi-agent-platform.json` returns the canonical endpoint manifest.
+Use `error_code`, not the HTTP status by itself. This table stays authoritative:
+
+| HTTP | `error_code` | Action |
+|---:|---|---|
+| 401 | `missing_bearer` | Use the host-supported credential-recovery flow, finish OAuth, then retry once. Reload only if the host requires it. |
+| 401 | `invalid_token` | Use the host-supported credential recovery; remove only a host-diagnosed manual override, finish OAuth, then retry once. Follow host-specific reload requirements. |
+| 401 | `token_expired` | Let Claude refresh OAuth; if refresh fails, use the recovery flow. Do not create another Agent. |
+| 403 | `insufficient_oauth_scope` | Reauthorize the returned `required_scopes` through the normal consent flow; do not reinstall or create an Agent. |
+| 403 | existing identity-binding requirement | Bind through the returned Google/email/phone `next`, then retry once. |
+| 403 | `forbidden` | Stop and explain the business permission boundary; repeated login will not fix it. |
+
+A 401 is a credential result, `insufficient_oauth_scope` is a credential-authorization result, and a
+business 403 is a permission result: never treat every 403 alike. Reauthorize only the returned
+scopes through normal consent, keeping the verified scope set already on the installation, and never
+read tokens, keychain entries, or broad grants to reconstruct it. A `restart_required` or reload
+hint is package-update guidance only and is never evidence about credentials or business authority.
+
+The native MCP transport may carry the same authorization result as an OAuth Bearer challenge: an
+HTTP 403 with `WWW-Authenticate: Bearer error="insufficient_scope", scope="...",
+resource_metadata="..."` for a structured `insufficient_oauth_scope`. Both name the same
+scope-recovery semantics: reauthorize through the host's OAuth challenge and the scopes it returns,
+and treat the structured `required_scope` or `required_scopes` and the challenge `scope` as the same
+input evidence. A generic business 403 carries no challenge and never starts a reauthorization loop;
+if a host exposes only a generic failure with no typed challenge or scope evidence, do not guess
+scopes or read credentials, and obtain host-supported diagnostics or normal consent instead. Never
+scrape a broad catalog or broad grants, and never infer a permission from message phrases.
+
+Recovery is bounded. Finish the required connect or reauthorize step and let the host-supported
+reconnect or refresh take effect, then retry the original bounded operation once. Further reload or
+refresh specifics belong to the host template, so follow the installed host's own requirements
+there. Do not add fake sleeps or unbounded retry loops, and never repeat a business write whose
+outcome is uncertain: resolve it through the returned receipt or idempotency-key lookup instead. If
+tools are still missing or old after an actual install, update, or configuration change, reload or
+start a new session (because Claude reloads Skills only in a new session) and report the concrete remaining error. Escalate to the
+last supported action, fully restart Claude, only with that evidence, and do not repeat
+reinstall/restart cycles.
+
+A valid pending Agent may continue with the existing anonymous operations `people.find`,
+`people.explain`, and staged `capture.record`. Do not require login merely because the user is
+anonymous. Login is required only when the requested operation needs private Workspace data or an
+authenticated write.
+
+## Boundaries
+
+- The plugin only declares the remote MCP connection and usage skills.
+- `hi-mcp-server` adapts MCP and forwards the live capability call.
+- `hi-auth` performs OAuth and issues the Agent Session credential.
+- `hi-platform` exposes the public capability catalog and call endpoint.
+- Secretary Core owns Person, Workspace, Message, Moment, Relationship and the other business
+  records.
+
+Readiness requires both: `hi_agent_status` reports a valid credential, and
+`workspace_workflows(action: "catalog")` succeeds. `activated:false` may still be a valid anonymous
+pending Agent; apply the anonymous-operation boundary above instead of treating it as disconnected.

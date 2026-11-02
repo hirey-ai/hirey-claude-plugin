@@ -11,7 +11,7 @@
     "version": "0.3.4"
   },
   "versions": {
-    "sharedSkills": "0.2.14",
+    "sharedSkills": "0.2.15",
     "backendContract": {
       "tool": "workspace_workflows",
       "version": "v1.1"
@@ -22,8 +22,8 @@
     "packageState": "candidate"
   },
   "output_root": "agent-packages/claude",
-  "source_content_digest": "sha256:191599963778afb6a8af549e9c643dae6bdd109e5b858a19adf503c4e3f1cf7e",
-  "package_digest": "sha256:2e700d4da95eafd1000ecd586636da3bc75f0f93e50326e9ef008620084b6751",
+  "source_content_digest": "sha256:699bb16a8457c75b6b4780d07fbc8afef9fc27d31c00753fc4b6ac34dd6bd6b4",
+  "package_digest": "sha256:4f8e125a3a89adf11938656dc6635d0fa7368823829ac1c52e328c9305e3dfe4",
   "files": [
     {
       "path": ".claude-plugin/plugin.json",
@@ -51,7 +51,7 @@
     },
     {
       "path": "skills/hi-events/SKILL.md",
-      "sha256": "8daf1d1b212e58974d2907240e05163e73407d439b4f1abc5be490296ffb0d62"
+      "sha256": "e14fa567e9beb7e6799bfde38ab5c9be8c898cd87bdd531fa31f691dd0e8ee0a"
     },
     {
       "path": "skills/hi-instance/SKILL.md",
@@ -75,7 +75,7 @@
     },
     {
       "path": "skills/hi-pages/SKILL.md",
-      "sha256": "e1cdf1104f5ace1e08ceee1cfa79547a392d58b8f877767710768912aa3e2ced"
+      "sha256": "669d95df106a9358ed2dd9e09662b74b8ea21c9f16fc141196cdfd4d4806e70c"
     },
     {
       "path": "skills/hi-pages/references/operations.md",
